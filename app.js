@@ -1046,9 +1046,27 @@ class GeloGrowthOS {
     const today = getDemoToday();
 
     if (viewType === 'linkedin') {
+      let oldContactId = record.contactId;
+      let contactName = updatedFields.contactName || record.contactName || '';
+      let isMigrated = false;
+
+      if (oldContactId && oldContactId.startsWith('CON-') && contactName) {
+        let contact = this.data.contacts.find(c => c.contactId === oldContactId);
+        if (contact) {
+          contact.contactId = contactName;
+          contact.fullName = contactName;
+          contact.linkedinUrl = record.linkedinUrl || '';
+          contact.updatedAt = today;
+          contactToSave = contact;
+        }
+        record.contactId = contactName;
+        const localLead = this.data.linkedinLeads.find(l => l.leadId === record.leadId);
+        if (localLead) localLead.contactId = contactName;
+        isMigrated = true;
+      }
+
       let contact = this.data.contacts.find(c => c.contactId === record.contactId);
-      if (!contact) {
-        // Create missing contact (self-repair!)
+      if (!contact && !isMigrated) {
         contact = {
           contactId: record.contactId,
           fullName: updatedFields.contactName,
@@ -1067,17 +1085,18 @@ class GeloGrowthOS {
         };
         this.data.contacts.push(contact);
         isNewContact = true;
-      } else {
+        contactToSave = contact;
+      } else if (!isMigrated) {
         contact.fullName = updatedFields.contactName;
         contact.linkedinUrl = record.linkedinUrl;
         contact.updatedAt = today;
+        contactToSave = contact;
       }
-      contactToSave = contact;
 
       if (updatedFields.company) {
         if (!record.organizationId) {
           record.organizationId = `ORG-${String((this.data.organizations || []).length + 1).padStart(4, '0')}`;
-          if (contact) contact.organizationId = record.organizationId;
+          if (contactToSave) contactToSave.organizationId = record.organizationId;
         }
         let org = this.data.organizations.find(o => o.organizationId === record.organizationId);
         if (!org) {
@@ -1102,8 +1121,26 @@ class GeloGrowthOS {
         orgToSave = org;
       }
     } else if (viewType === 'prime') {
+      let oldContactId = record.contactId;
+      let contactName = updatedFields.contactName || record.contactName || '';
+      let isMigrated = false;
+
+      if (oldContactId && oldContactId.startsWith('CON-') && contactName) {
+        let contact = this.data.contacts.find(c => c.contactId === oldContactId);
+        if (contact) {
+          contact.contactId = contactName;
+          contact.fullName = contactName;
+          contact.updatedAt = today;
+          contactToSave = contact;
+        }
+        record.contactId = contactName;
+        const localOpp = this.data.primePipeline.find(o => o.opportunityId === record.opportunityId);
+        if (localOpp) localOpp.contactId = contactName;
+        isMigrated = true;
+      }
+
       let contact = this.data.contacts.find(c => c.contactId === record.contactId);
-      if (!contact) {
+      if (!contact && !isMigrated) {
         contact = {
           contactId: record.contactId,
           fullName: updatedFields.contactName,
@@ -1122,11 +1159,12 @@ class GeloGrowthOS {
         };
         this.data.contacts.push(contact);
         isNewContact = true;
-      } else {
+        contactToSave = contact;
+      } else if (!isMigrated) {
         contact.fullName = updatedFields.contactName;
         contact.updatedAt = today;
+        contactToSave = contact;
       }
-      contactToSave = contact;
 
       let org = this.data.organizations.find(o => o.organizationId === record.organizationId);
       if (!org) {
@@ -1150,8 +1188,27 @@ class GeloGrowthOS {
       }
       orgToSave = org;
     } else if (viewType === 'calmera') {
+      let oldContactId = record.contactId;
+      let customerName = updatedFields.customerName || record.customerName || '';
+      let isMigrated = false;
+
+      if (oldContactId && oldContactId.startsWith('CON-') && customerName) {
+        let contact = this.data.contacts.find(c => c.contactId === oldContactId);
+        if (contact) {
+          contact.contactId = customerName;
+          contact.fullName = customerName;
+          contact.preferredChannel = updatedFields.preferredChannel || 'Email';
+          contact.updatedAt = today;
+          contactToSave = contact;
+        }
+        record.contactId = customerName;
+        const localOrder = this.data.calmeraOrders.find(o => o.orderId === record.orderId);
+        if (localOrder) localOrder.contactId = customerName;
+        isMigrated = true;
+      }
+
       let contact = this.data.contacts.find(c => c.contactId === record.contactId);
-      if (!contact) {
+      if (!contact && !isMigrated) {
         contact = {
           contactId: record.contactId,
           fullName: updatedFields.customerName,
@@ -1170,12 +1227,13 @@ class GeloGrowthOS {
         };
         this.data.contacts.push(contact);
         isNewContact = true;
-      } else {
+        contactToSave = contact;
+      } else if (!isMigrated) {
         contact.fullName = updatedFields.customerName;
         contact.preferredChannel = updatedFields.preferredChannel || 'Email';
         contact.updatedAt = today;
+        contactToSave = contact;
       }
-      contactToSave = contact;
     }
 
     // Run denormalize locally to immediately update view properties (like contactName and company)
@@ -1872,41 +1930,56 @@ class GeloGrowthOS {
 
     switch (this.currentView) {
       case 'linkedin': {
-        const contactId = `CON-${String((this.data.contacts || []).length + 1).padStart(4, '0')}`;
-        const orgId = data.company ? `ORG-${String((this.data.organizations || []).length + 1).padStart(4, '0')}` : '';
+        const contactId = data.contactName;
+        let orgId = '';
 
-        newContact = {
-          contactId,
-          fullName: data.contactName,
-          email: '',
-          mobile: '',
-          linkedinUrl: data.linkedinUrl || '',
-          organizationId: orgId,
-          segments: ['LinkedIn Lead'],
-          preferredChannel: 'LinkedIn',
-          contactBasis: '',
-          ownerId: 'Gelo',
-          status: 'Active',
-          createdAt: today,
-          updatedAt: today,
-          notes: data.notes || '',
-        };
-        this.data.contacts.push(newContact);
-
-        if (data.company) {
-          newOrg = {
-            organizationId: orgId,
-            organizationName: data.company,
-            industry: '',
-            website: '',
-            source: 'LinkedIn',
-            accountStatus: 'Active',
+        // Avoid duplicate contacts
+        let contact = this.data.contacts.find(c => c.fullName === data.contactName || c.contactId === contactId);
+        if (!contact) {
+          newContact = {
+            contactId,
+            fullName: data.contactName,
+            email: '',
+            mobile: '',
+            linkedinUrl: data.linkedinUrl || '',
+            organizationId: '', // will be set below
+            segments: ['LinkedIn Lead'],
+            preferredChannel: 'LinkedIn',
+            contactBasis: '',
             ownerId: 'Gelo',
+            status: 'Active',
             createdAt: today,
             updatedAt: today,
-            notes: '',
+            notes: data.notes || '',
           };
-          this.data.organizations.push(newOrg);
+          this.data.contacts.push(newContact);
+        } else {
+          newContact = null;
+        }
+
+        if (data.company) {
+          let org = this.data.organizations.find(o => o.organizationName === data.company);
+          if (!org) {
+            orgId = `ORG-${String((this.data.organizations || []).length + 1).padStart(4, '0')}`;
+            newOrg = {
+              organizationId: orgId,
+              organizationName: data.company,
+              industry: '',
+              website: '',
+              source: 'LinkedIn',
+              accountStatus: 'Active',
+              ownerId: 'Gelo',
+              createdAt: today,
+              updatedAt: today,
+              notes: '',
+            };
+            this.data.organizations.push(newOrg);
+          } else {
+            orgId = org.organizationId;
+            newOrg = null;
+          }
+          if (newContact) newContact.organizationId = orgId;
+          else if (contact) contact.organizationId = orgId;
         }
 
         newRecord = {
@@ -1933,40 +2006,54 @@ class GeloGrowthOS {
         break;
       }
       case 'prime': {
-        const primeContactId = `CON-${String((this.data.contacts || []).length + 1).padStart(4, '0')}`;
-        const primeOrgId = `ORG-${String((this.data.organizations || []).length + 1).padStart(4, '0')}`;
+        const primeContactId = data.contactName;
+        let primeOrgId = '';
 
-        newContact = {
-          contactId: primeContactId,
-          fullName: data.contactName,
-          email: '',
-          mobile: '',
-          linkedinUrl: '',
-          organizationId: primeOrgId,
-          segments: ['Prime'],
-          preferredChannel: 'Email',
-          contactBasis: '',
-          ownerId: 'Gelo',
-          status: 'Active',
-          createdAt: today,
-          updatedAt: today,
-          notes: '',
-        };
-        this.data.contacts.push(newContact);
+        let contact = this.data.contacts.find(c => c.fullName === data.contactName || c.contactId === primeContactId);
+        if (!contact) {
+          newContact = {
+            contactId: primeContactId,
+            fullName: data.contactName,
+            email: '',
+            mobile: '',
+            linkedinUrl: '',
+            organizationId: '', // will be set below
+            segments: ['Prime'],
+            preferredChannel: 'Email',
+            contactBasis: '',
+            ownerId: 'Gelo',
+            status: 'Active',
+            createdAt: today,
+            updatedAt: today,
+            notes: '',
+          };
+          this.data.contacts.push(newContact);
+        } else {
+          newContact = null;
+        }
 
-        newOrg = {
-          organizationId: primeOrgId,
-          organizationName: data.orgName,
-          industry: '',
-          website: '',
-          source: 'Direct',
-          accountStatus: 'Prospect',
-          ownerId: 'Gelo',
-          createdAt: today,
-          updatedAt: today,
-          notes: '',
-        };
-        this.data.organizations.push(newOrg);
+        let org = this.data.organizations.find(o => o.organizationName === data.orgName);
+        if (!org) {
+          primeOrgId = `ORG-${String((this.data.organizations || []).length + 1).padStart(4, '0')}`;
+          newOrg = {
+            organizationId: primeOrgId,
+            organizationName: data.orgName,
+            industry: '',
+            website: '',
+            source: 'Direct',
+            accountStatus: 'Prospect',
+            ownerId: 'Gelo',
+            createdAt: today,
+            updatedAt: today,
+            notes: '',
+          };
+          this.data.organizations.push(newOrg);
+        } else {
+          primeOrgId = org.organizationId;
+          newOrg = null;
+        }
+        if (newContact) newContact.organizationId = primeOrgId;
+        else if (contact) contact.organizationId = primeOrgId;
 
         const value = parseInt(data.estimatedValue) || 0;
         const prob = parseInt(data.probabilityPercent) || 20;
@@ -2010,24 +2097,30 @@ class GeloGrowthOS {
         break;
       }
       case 'calmera': {
-        const calmeraContactId = `CON-${String((this.data.contacts || []).length + 1).padStart(4, '0')}`;
-        newContact = {
-          contactId: calmeraContactId,
-          fullName: data.customerName,
-          email: '',
-          mobile: '',
-          linkedinUrl: '',
-          organizationId: '',
-          segments: ['Calmera'],
-          preferredChannel: data.preferredChannel || 'Email',
-          contactBasis: '',
-          ownerId: 'Gelo',
-          status: 'Active',
-          createdAt: today,
-          updatedAt: today,
-          notes: '',
-        };
-        this.data.contacts.push(newContact);
+        const calmeraContactId = data.customerName;
+
+        let contact = this.data.contacts.find(c => c.fullName === data.customerName || c.contactId === calmeraContactId);
+        if (!contact) {
+          newContact = {
+            contactId: calmeraContactId,
+            fullName: data.customerName,
+            email: '',
+            mobile: '',
+            linkedinUrl: '',
+            organizationId: '',
+            segments: ['Calmera'],
+            preferredChannel: data.preferredChannel || 'Email',
+            contactBasis: '',
+            ownerId: 'Gelo',
+            status: 'Active',
+            createdAt: today,
+            updatedAt: today,
+            notes: '',
+          };
+          this.data.contacts.push(newContact);
+        } else {
+          newContact = null;
+        }
 
         newRecord = {
           orderId: `CAL-${String((this.data.calmeraOrders || []).length + 1).padStart(4, '0')}`,

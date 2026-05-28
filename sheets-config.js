@@ -194,6 +194,7 @@ class SheetsService {
       const col = REVERSE_COLUMN_MAP[key] || key;
       if (val === true) sheetRow[col] = 'TRUE';
       else if (val === false) sheetRow[col] = 'FALSE';
+      else if (Array.isArray(val)) sheetRow[col] = val.join(', ');
       else sheetRow[col] = val;
     });
 
@@ -218,6 +219,7 @@ class SheetsService {
       const col = REVERSE_COLUMN_MAP[key] || key;
       if (val === true) sheetRow[col] = 'TRUE';
       else if (val === false) sheetRow[col] = 'FALSE';
+      else if (Array.isArray(val)) sheetRow[col] = val.join(', ');
       else sheetRow[col] = val;
     });
 

@@ -159,7 +159,10 @@ function appendRow(tabName, data) {
   if (!sheet) throw new Error(`Tab "${tabName}" not found`);
 
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const row = headers.map(header => data[header] !== undefined ? data[header] : '');
+  const row = headers.map(header => {
+    const val = data[header] !== undefined ? data[header] : '';
+    return Array.isArray(val) ? val.join(', ') : val;
+  });
 
   sheet.appendRow(row);
   return sheet.getLastRow() - 1; // data row count
@@ -174,7 +177,10 @@ function batchAppendRows(tabName, dataArray) {
 
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const rows = dataArray.map(data =>
-    headers.map(header => data[header] !== undefined ? data[header] : '')
+    headers.map(header => {
+      const val = data[header] !== undefined ? data[header] : '';
+      return Array.isArray(val) ? val.join(', ') : val;
+    })
   );
 
   const lastRow = sheet.getLastRow();
@@ -190,7 +196,10 @@ function updateRow(tabName, rowIndex, data) {
   if (!sheet) throw new Error(`Tab "${tabName}" not found`);
 
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  const row = headers.map(header => data[header] !== undefined ? data[header] : '');
+  const row = headers.map(header => {
+    const val = data[header] !== undefined ? data[header] : '';
+    return Array.isArray(val) ? val.join(', ') : val;
+  });
   const sheetRow = rowIndex + 2; // +1 for header, +1 for 1-indexed
 
   sheet.getRange(sheetRow, 1, 1, headers.length).setValues([row]);
