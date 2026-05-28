@@ -1039,6 +1039,147 @@ class GeloGrowthOS {
       record.weightedValue = Math.round(val * prob / 100);
     }
 
+    // Relational self-repair/sync
+    let contactToSave, orgToSave;
+    let isNewContact = false, isNewOrg = false;
+    const today = getDemoToday();
+
+    if (viewType === 'linkedin') {
+      let contact = this.data.contacts.find(c => c.contactId === record.contactId);
+      if (!contact) {
+        // Create missing contact (self-repair!)
+        contact = {
+          contactId: record.contactId,
+          fullName: updatedFields.contactName,
+          email: '',
+          mobile: '',
+          linkedinUrl: record.linkedinUrl || '',
+          organizationId: record.organizationId || '',
+          segments: ['LinkedIn Lead'],
+          preferredChannel: 'LinkedIn',
+          contactBasis: '',
+          ownerId: 'Gelo',
+          status: 'Active',
+          createdAt: today,
+          updatedAt: today,
+          notes: '',
+        };
+        this.data.contacts.push(contact);
+        isNewContact = true;
+      } else {
+        contact.fullName = updatedFields.contactName;
+        contact.linkedinUrl = record.linkedinUrl;
+        contact.updatedAt = today;
+      }
+      contactToSave = contact;
+
+      if (updatedFields.company) {
+        if (!record.organizationId) {
+          record.organizationId = `ORG-${String((this.data.organizations || []).length + 1).padStart(4, '0')}`;
+          if (contact) contact.organizationId = record.organizationId;
+        }
+        let org = this.data.organizations.find(o => o.organizationId === record.organizationId);
+        if (!org) {
+          org = {
+            organizationId: record.organizationId,
+            organizationName: updatedFields.company,
+            industry: '',
+            website: '',
+            source: 'LinkedIn',
+            accountStatus: 'Active',
+            ownerId: 'Gelo',
+            createdAt: today,
+            updatedAt: today,
+            notes: '',
+          };
+          this.data.organizations.push(org);
+          isNewOrg = true;
+        } else {
+          org.organizationName = updatedFields.company;
+          org.updatedAt = today;
+        }
+        orgToSave = org;
+      }
+    } else if (viewType === 'prime') {
+      let contact = this.data.contacts.find(c => c.contactId === record.contactId);
+      if (!contact) {
+        contact = {
+          contactId: record.contactId,
+          fullName: updatedFields.contactName,
+          email: '',
+          mobile: '',
+          linkedinUrl: '',
+          organizationId: record.organizationId || '',
+          segments: ['Prime'],
+          preferredChannel: 'Email',
+          contactBasis: '',
+          ownerId: 'Gelo',
+          status: 'Active',
+          createdAt: today,
+          updatedAt: today,
+          notes: '',
+        };
+        this.data.contacts.push(contact);
+        isNewContact = true;
+      } else {
+        contact.fullName = updatedFields.contactName;
+        contact.updatedAt = today;
+      }
+      contactToSave = contact;
+
+      let org = this.data.organizations.find(o => o.organizationId === record.organizationId);
+      if (!org) {
+        org = {
+          organizationId: record.organizationId,
+          organizationName: updatedFields.orgName,
+          industry: '',
+          website: '',
+          source: 'Direct',
+          accountStatus: 'Prospect',
+          ownerId: 'Gelo',
+          createdAt: today,
+          updatedAt: today,
+          notes: '',
+        };
+        this.data.organizations.push(org);
+        isNewOrg = true;
+      } else {
+        org.organizationName = updatedFields.orgName;
+        org.updatedAt = today;
+      }
+      orgToSave = org;
+    } else if (viewType === 'calmera') {
+      let contact = this.data.contacts.find(c => c.contactId === record.contactId);
+      if (!contact) {
+        contact = {
+          contactId: record.contactId,
+          fullName: updatedFields.customerName,
+          email: '',
+          mobile: '',
+          linkedinUrl: '',
+          organizationId: '',
+          segments: ['Calmera'],
+          preferredChannel: updatedFields.preferredChannel || 'Email',
+          contactBasis: '',
+          ownerId: 'Gelo',
+          status: 'Active',
+          createdAt: today,
+          updatedAt: today,
+          notes: '',
+        };
+        this.data.contacts.push(contact);
+        isNewContact = true;
+      } else {
+        contact.fullName = updatedFields.customerName;
+        contact.preferredChannel = updatedFields.preferredChannel || 'Email';
+        contact.updatedAt = today;
+      }
+      contactToSave = contact;
+    }
+
+    // Run denormalize locally to immediately update view properties (like contactName and company)
+    sheetsService._denormalize(this.data);
+
     // Refresh CRM views and reopen panel in view mode
     this.applyFilters();
     this.render();
@@ -1050,13 +1191,36 @@ class GeloGrowthOS {
       const rowIndex = record._rowIndex;
       if (rowIndex !== undefined) {
         try {
+          // Write/Update the Main Record
           await sheetsService.updateRecord(config.tabKey, rowIndex, record);
+          
+          // Write/Update Contact
+          if (contactToSave) {
+            if (isNewContact) {
+              await sheetsService.appendRecord('contacts', contactToSave)
+                .then(res => { if (res && res.rowsAfter !== undefined) contactToSave._rowIndex = res.rowsAfter - 1; });
+            } else if (contactToSave._rowIndex !== undefined) {
+              await sheetsService.updateRecord('contacts', contactToSave._rowIndex, contactToSave);
+            }
+          }
+          
+          // Write/Update Organization
+          if (orgToSave) {
+            if (isNewOrg) {
+              await sheetsService.appendRecord('organizations', orgToSave)
+                .then(res => { if (res && res.rowsAfter !== undefined) orgToSave._rowIndex = res.rowsAfter - 1; });
+            } else if (orgToSave._rowIndex !== undefined) {
+              await sheetsService.updateRecord('organizations', orgToSave._rowIndex, orgToSave);
+            }
+          }
+
           this.showToast('📤 Saved to Google Sheets', 'success');
         } catch (err) {
           console.error('Sheet update failed:', err);
           this.showToast('⚠️ Sheet write failed. Reverting changes...', 'danger');
           // Revert local data
           Object.assign(record, oldRecord);
+          sheetsService._denormalize(this.data);
           this.applyFilters();
           this.render();
           this.openRecordPanel(viewType, record[config.idKey]);
