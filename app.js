@@ -35,8 +35,16 @@ class GeloGrowthOS {
     this.sheetsConnected = false;
     this.sortConfig     = { key: null, direction: 'asc' };
     this.confirmCallback = null;
-    this._calendarDate  = new Date();
-    this._calendarViewMode = 'list'; // list | month
+    this._calViewMode = localStorage.getItem('gos_calendar_view_pref') || (window.innerWidth < 768 ? 'list' : 'calendar');
+    this._calLayout = localStorage.getItem('gos_calendar_layout_pref') || 'month';
+    this._calActiveDate = new Date();
+    this._calSortKey = 'date';
+    this._calSortDir = 'asc';
+    this._calFilter = 'all';
+    this._calCatFilter = 'all';
+    this._calTypeFilter = 'all';
+    this._calPriorityFilter = 'all';
+    this._calStatusFilter = 'all';
     this._settingsTab   = 'workspace';
     this._msgType       = 'follow-up';
     this._msgTone       = 'warm';
@@ -2688,151 +2696,863 @@ class GeloGrowthOS {
   // ═══════════════════════════════════════════════════════════
 
   // ── Calendar View ───────────────────────────────────────────
-  renderCalendar(container) {
-    const leads   = this.data.linkedinLeads || [];
-    const pipe    = this.data.primePipeline || [];
-    const orders  = this.data.calmeraOrders || [];
-    const today   = getDemoToday();
-
-    // Aggregate events from all data sources
+  // ── Calendar View ───────────────────────────────────────────
+  gatherCalendarEvents() {
+    const leads = this.data.linkedinLeads || [];
+    const pipe = this.data.primePipeline || [];
+    const orders = this.data.calmeraOrders || [];
+    const content = this.data.sccContent || [];
+    const tasks = this.data.tasks || [];
+    const today = getDemoToday();
     const events = [];
 
+    // 1. Leads
     leads.forEach(l => {
-      if (l.nextActionDate) events.push({
-        date:    l.nextActionDate,
-        name:    l.contactName  || 'Unknown',
-        type:    'Follow-up',
-        next:    l.nextAction   || '',
-        stage:   l.stage        || '',
-        color:   '#6366f1',
-        viewType:'linkedin', id: l.leadId,
-      });
+      if (l.nextActionDate) {
+        events.push({
+          id: l.leadId,
+          viewType: 'linkedin',
+          date: l.nextActionDate,
+          time: '10:00 AM', // default lead time
+          name: l.contactName || l.fullName || 'Unknown Lead',
+          type: 'Follow-up',
+          category: 'consulting',
+          priority: l.priority || 'Medium',
+          status: l.stage || 'New',
+          nextAction: l.nextAction || 'Follow up with lead',
+          score: l.qualificationScore || 0,
+          record: l
+        });
+      }
     });
 
+    // 2. Pipeline (Opportunities)
     pipe.forEach(p => {
-      if (p.nextActionDate) events.push({
-        date:    p.nextActionDate,
-        name:    p.contactName  || 'Unknown',
-        type:    'Sales Action',
-        next:    p.nextAction   || '',
-        stage:   p.stage        || '',
-        color:   '#10b981',
-        viewType:'prime', id: p.opportunityId,
-      });
+      if (p.nextActionDate) {
+        let type = 'Sales Call';
+        if (p.stage === 'Discovery') type = 'Discovery Call';
+        else if (['Proposal Sent', 'Negotiation'].includes(p.stage)) type = 'Proposal Follow-up';
+        
+        events.push({
+          id: p.opportunityId,
+          viewType: 'prime',
+          date: p.nextActionDate,
+          time: '11:00 AM',
+          name: p.contactName || p.opportunityId || 'Unknown Deal',
+          type: type,
+          category: 'consulting',
+          priority: p.priority || 'Medium',
+          status: p.stage || 'New Inquiry',
+          nextAction: p.nextAction || 'Action item on deal',
+          score: p.probabilityPercent || 0,
+          record: p
+        });
+      }
     });
 
+    // 3. Orders
     orders.forEach(o => {
-      if (o.fulfillmentCutoff) events.push({
-        date:    o.fulfillmentCutoff,
-        name:    o.customerName || 'Unknown',
-        type:    'Order Cutoff',
-        next:    o.itemsSummary || '',
-        stage:   o.reconfirmationStatus || '',
-        color:   '#f59e0b',
-        viewType:'calmera', id: o.orderId,
-      });
+      if (o.fulfillmentCutoff) {
+        let type = 'Order Reconfirmation';
+        if (['Escalated', 'Awaiting Response'].includes(o.reconfirmationStatus)) type = 'Customer Callback';
+
+        events.push({
+          id: o.orderId,
+          viewType: 'calmera',
+          date: o.fulfillmentCutoff,
+          time: '04:00 PM',
+          name: o.customerName || o.externalOrderRef || 'Unknown Order',
+          type: type,
+          category: 'productsOrders',
+          priority: (o.orderStatus === 'At Risk' || o.reconfirmationStatus === 'Escalated') ? 'High' : 'Medium',
+          status: o.reconfirmationStatus || 'Pending Contact',
+          nextAction: o.itemsSummary || 'Confirm order items',
+          score: 0,
+          record: o
+        });
+      }
     });
 
-    // Apply filter from this._calFilter
-    const filter = this._calFilter || 'all';
+    // 4. Content
+    content.forEach(c => {
+      if (c.plannedPublishAt) {
+        events.push({
+          id: c.contentId,
+          viewType: 'scc',
+          date: c.plannedPublishAt,
+          time: '12:00 PM',
+          name: c.title || 'Untitled Content',
+          type: 'Content Task',
+          category: 'brandCommunity',
+          priority: c.priority || 'Medium',
+          status: c.CTA || 'Idea',
+          nextAction: c.contentPillar || 'Publish draft',
+          score: 0,
+          record: c
+        });
+      }
+    });
+
+    // 5. Tasks (Manual Events)
+    tasks.forEach(t => {
+      if (t.dueAt) {
+        const parts = t.dueAt.split(/[ T]/);
+        const date = parts[0] || '';
+        let time = parts[1] || '09:00 AM';
+        if (time && time.includes(':')) {
+          time = time.slice(0, 5); // format as HH:MM
+        }
+        
+        events.push({
+          id: t.taskId,
+          viewType: 'tasks',
+          date: date,
+          time: time,
+          name: t.assignedTo || 'My Event',
+          type: t.taskType || 'Manual Event',
+          category: 'personalBrand',
+          priority: t.priority || 'Medium',
+          status: t.status || 'Open',
+          nextAction: t.notes || 'Task to be completed',
+          score: 0,
+          record: t
+        });
+      }
+    });
+
+    return events;
+  }
+
+  isEventOverdue(ev) {
+    const today = getDemoToday();
+    const isBefore = ev.date < today;
+    const isCompleted = ['Done', 'Completed', 'Confirmed', 'Closed', 'Won'].includes(ev.status);
+    return isBefore && !isCompleted;
+  }
+
+  filterAndSortEvents(events) {
+    const today = getDemoToday();
+    
+    // Calculate date bounds
+    const now = new Date();
+    const tomorrowDate = new Date();
+    tomorrowDate.setDate(now.getDate() + 1);
+    const tomorrow = tomorrowDate.toISOString().slice(0, 10);
+    
+    // Get start & end of week
+    const currentDay = now.getDay(); // 0 is Sun, 6 is Sat
+    const startOfWeekDate = new Date(now);
+    startOfWeekDate.setDate(now.getDate() - currentDay);
+    const endOfWeekDate = new Date(startOfWeekDate);
+    endOfWeekDate.setDate(startOfWeekDate.getDate() + 6);
+    
+    const startOfWeek = startOfWeekDate.toISOString().slice(0, 10);
+    const endOfWeek = endOfWeekDate.toISOString().slice(0, 10);
+    
     let filtered = events.slice();
-    if (filter === 'today')    filtered = filtered.filter(e => e.date === today);
-    else if (filter === 'week') {
-      const d7 = new Date(); d7.setDate(d7.getDate() + 7);
-      filtered = filtered.filter(e => e.date >= today && e.date <= d7.toISOString().slice(0,10));
+
+    // 1. Time-based filters (this._calFilter)
+    if (this._calFilter === 'today') {
+      filtered = filtered.filter(ev => ev.date === today);
+    } else if (this._calFilter === 'tomorrow') {
+      filtered = filtered.filter(ev => ev.date === tomorrow);
+    } else if (this._calFilter === 'week') {
+      filtered = filtered.filter(ev => ev.date >= startOfWeek && ev.date <= endOfWeek);
+    } else if (this._calFilter === 'month') {
+      filtered = filtered.filter(ev => ev.date.slice(0, 7) === today.slice(0, 7));
+    } else if (this._calFilter === 'overdue') {
+      filtered = filtered.filter(ev => this.isEventOverdue(ev));
     }
-    else if (filter === 'overdue') filtered = filtered.filter(e => e.date < today);
-    else if (filter === 'followup') filtered = filtered.filter(e => e.type === 'Follow-up');
-    else if (filter === 'calls')   filtered = filtered.filter(e => e.type === 'Sales Action');
 
-    // Group events by date
-    const groups = {};
-    filtered.sort((a,b) => a.date.localeCompare(b.date)).forEach(ev => {
-      if (!groups[ev.date]) groups[ev.date] = [];
-      groups[ev.date].push(ev);
-    });
+    // 2. Category filter (this._calCatFilter)
+    if (this._calCatFilter !== 'all') {
+      filtered = filtered.filter(ev => ev.category === this._calCatFilter);
+    }
 
-    const todayEvents    = (groups[today] || []);
-    const futureEvents   = filtered.filter(e => e.date > today);
-    const overdueEvents  = filtered.filter(e => e.date < today);
+    // 3. Event Type filter (this._calTypeFilter)
+    if (this._calTypeFilter !== 'all') {
+      if (this._calTypeFilter === 'followups') {
+        filtered = filtered.filter(ev => ev.type === 'Follow-up');
+      } else if (this._calTypeFilter === 'calls') {
+        filtered = filtered.filter(ev => ev.type === 'Sales Call' || ev.type === 'Discovery Call');
+      } else if (this._calTypeFilter === 'proposal') {
+        filtered = filtered.filter(ev => ev.type === 'Proposal Follow-up');
+      } else if (this._calTypeFilter === 'content') {
+        filtered = filtered.filter(ev => ev.type === 'Content Task');
+      } else if (this._calTypeFilter === 'orders') {
+        filtered = filtered.filter(ev => ev.type === 'Order Reconfirmation' || ev.type === 'Customer Callback');
+      }
+    }
 
-    const filterBtns = ['all','today','week','overdue','followup','calls'].map(f => `
-      <button class="calendar-filter-btn ${filter === f ? 'active' : ''}" onclick="app._setCalFilter('${f}')">
-        ${{ all:'All', today:'Today', week:'This Week', overdue:'⚠️ Overdue', followup:'Follow-ups', calls:'Sales Actions' }[f]}
-      </button>
-    `).join('');
+    // 4. Priority filter (this._calPriorityFilter)
+    if (this._calPriorityFilter !== 'all') {
+      filtered = filtered.filter(ev => (ev.priority || '').toLowerCase() === this._calPriorityFilter.toLowerCase());
+    }
 
-    const renderEventCard = (ev) => `
-      <div class="calendar-event-card" onclick="app.openRecordPanel('${ev.viewType}', '${ev.id}')">
-        <div class="event-time-col">${ev.date === today ? 'Today' : ev.date.slice(5).replace('-','/')}</div>
-        <div class="event-type-dot" style="background:${ev.color}"></div>
-        <div class="event-info">
-          <div class="event-lead-name">${ev.name}</div>
-          <div class="event-type-label">${ev.type} · ${ev.stage}</div>
-          ${ev.next ? `<div class="event-next-action">${ev.next}</div>` : ''}
+    // 5. Status filter (this._calStatusFilter)
+    if (this._calStatusFilter !== 'all') {
+      filtered = filtered.filter(ev => {
+        const isDone = ['Done', 'Completed', 'Confirmed', 'Closed', 'Won'].includes(ev.status);
+        if (this._calStatusFilter === 'completed') return isDone;
+        if (this._calStatusFilter === 'open') return !isDone;
+        return ev.status.toLowerCase() === this._calStatusFilter.toLowerCase();
+      });
+    }
+
+    // Sort if in list mode
+    if (this._calViewMode === 'list') {
+      filtered.sort((a, b) => {
+        let aVal = a[this._calSortKey] || '';
+        let bVal = b[this._calSortKey] || '';
+        
+        if (this._calSortKey === 'priority') {
+          const weights = { 'Critical': 4, 'High': 3, 'Medium': 2, 'Low': 1 };
+          aVal = weights[a.priority] || 0;
+          bVal = weights[b.priority] || 0;
+        } else if (this._calSortKey === 'score') {
+          aVal = a.score || 0;
+          bVal = b.score || 0;
+        }
+
+        if (typeof aVal === 'number') {
+          return this._calSortDir === 'asc' ? aVal - bVal : bVal - aVal;
+        }
+        
+        return this._calSortDir === 'asc'
+          ? String(aVal).localeCompare(String(bVal))
+          : String(bVal).localeCompare(String(aVal));
+      });
+    } else {
+      filtered.sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+    }
+
+    return filtered;
+  }
+
+  renderCalendar(container) {
+    const events = this.gatherCalendarEvents();
+    const filtered = this.filterAndSortEvents(events);
+
+    const viewSelector = `
+      <div class="calendar-views-toolbar">
+        <div class="view-preference-toggle">
+          <button class="gos-btn ${this._calViewMode === 'calendar' ? 'active' : ''}" onclick="app._setCalViewMode('calendar')">📅 Calendar View</button>
+          <button class="gos-btn ${this._calViewMode === 'list' ? 'active' : ''}" onclick="app._setCalViewMode('list')">📋 List View</button>
         </div>
-        <button class="event-msg-btn" onclick="event.stopPropagation();app.openMessageForRecord('${ev.viewType}','${ev.id}')">✉️ Msg</button>
       </div>
     `;
 
-    container.innerHTML = `
-      <div class="calendar-toolbar">
-        <div class="calendar-filters">${filterBtns}</div>
-        <button class="btn-primary btn-sm" onclick="app.showToast('Calendar events sync automatically from your leads and pipeline.','info')">+ Manual Event (Coming Soon)</button>
+    const timeFilters = [
+      { id: 'all', label: 'All Time' },
+      { id: 'today', label: 'Today' },
+      { id: 'tomorrow', label: 'Tomorrow' },
+      { id: 'week', label: 'This Week' },
+      { id: 'month', label: 'This Month' },
+      { id: 'overdue', label: '⚠️ Overdue' }
+    ];
+
+    const typeFilters = [
+      { id: 'all', label: 'All Event Types' },
+      { id: 'followups', label: 'Follow-ups' },
+      { id: 'calls', label: 'Calls' },
+      { id: 'proposal', label: 'Proposal Follow-ups' },
+      { id: 'content', label: 'Content Tasks' },
+      { id: 'orders', label: 'Order Tasks' }
+    ];
+
+    const catFilters = [
+      { id: 'all', label: 'All Categories' },
+      ...settingsEngine.getAllCategories().map(c => ({ id: c.id, label: c.label }))
+    ];
+
+    const priFilters = [
+      { id: 'all', label: 'All Priorities' },
+      { id: 'High', label: 'High' },
+      { id: 'Medium', label: 'Medium' },
+      { id: 'Low', label: 'Low' }
+    ];
+
+    const statFilters = [
+      { id: 'all', label: 'All Statuses' },
+      { id: 'open', label: 'Open' },
+      { id: 'completed', label: 'Completed' }
+    ];
+
+    const filtersHtml = `
+      <div class="calendar-filters-row">
+        <select class="topbar-filter" onchange="app._setCalFilter(this.value)">
+          ${timeFilters.map(f => `<option value="${f.id}" ${this._calFilter === f.id ? 'selected' : ''}>${f.label}</option>`).join('')}
+        </select>
+        <select class="topbar-filter" onchange="app._setCalTypeFilter(this.value)">
+          ${typeFilters.map(f => `<option value="${f.id}" ${this._calTypeFilter === f.id ? 'selected' : ''}>${f.label}</option>`).join('')}
+        </select>
+        <select class="topbar-filter" onchange="app._setCalCatFilter(this.value)">
+          ${catFilters.map(f => `<option value="${f.id}" ${this._calCatFilter === f.id ? 'selected' : ''}>${f.label}</option>`).join('')}
+        </select>
+        <select class="topbar-filter" onchange="app._setCalPriorityFilter(this.value)">
+          ${priFilters.map(f => `<option value="${f.id}" ${this._calPriorityFilter === f.id ? 'selected' : ''}>${f.label}</option>`).join('')}
+        </select>
+        <select class="topbar-filter" onchange="app._setCalStatusFilter(this.value)">
+          ${statFilters.map(f => `<option value="${f.id}" ${this._calStatusFilter === f.id ? 'selected' : ''}>${f.label}</option>`).join('')}
+        </select>
       </div>
-      <div class="calendar-layout">
-        <div class="calendar-main">
-          ${overdueEvents.length > 0 ? `
-            <div class="calendar-day-group">
-              <div class="calendar-day-label"><span style="color:var(--red)">⚠️ Overdue (${overdueEvents.length})</span></div>
-              ${overdueEvents.map(renderEventCard).join('')}
-            </div>` : ''}
-          ${todayEvents.length > 0 ? `
-            <div class="calendar-day-group">
-              <div class="calendar-day-label">Today — ${today} <span class="today-pill">TODAY</span></div>
-              ${todayEvents.map(renderEventCard).join('')}
-            </div>` : ''}
-          ${Object.entries(groups).filter(([d]) => d > today).map(([date, evs]) => `
-            <div class="calendar-day-group">
-              <div class="calendar-day-label">${date}</div>
-              ${evs.map(renderEventCard).join('')}
-            </div>
-          `).join('')}
-          ${filtered.length === 0 ? `<div class="gos-empty"><span class="gos-empty-icon">📅</span><span class="gos-empty-title">No events match this filter</span><span class="gos-empty-desc">Add leads with follow-up dates to populate your calendar.</span></div>` : ''}
+    `;
+
+    let contentHtml = '';
+    if (this._calViewMode === 'calendar') {
+      contentHtml = this.renderCalendarLayout(filtered);
+    } else {
+      contentHtml = this.renderListLayout(filtered);
+    }
+
+    container.innerHTML = `
+      <div class="calendar-dashboard-wrap">
+        ${viewSelector}
+        ${filtersHtml}
+        ${contentHtml}
+      </div>
+    `;
+  }
+
+  renderCalendarLayout(filtered) {
+    const layout = this._calLayout || 'month';
+    
+    const layoutToggles = `
+      <div class="calendar-layout-toolbar">
+        <div class="layout-btn-group">
+          <button class="gos-btn btn-sm ${layout === 'month' ? 'active' : ''}" onclick="app._setCalLayout('month')">Month</button>
+          <button class="gos-btn btn-sm ${layout === 'week' ? 'active' : ''}" onclick="app._setCalLayout('week')">Week</button>
+          <button class="gos-btn btn-sm ${layout === 'day' ? 'active' : ''}" onclick="app._setCalLayout('day')">Day</button>
         </div>
-        <div class="calendar-sidebar">
-          <div class="upcoming-section">
-            <div class="upcoming-section-title">📌 Today (${todayEvents.length})</div>
-            ${todayEvents.slice(0,4).map(ev => `
-              <div class="upcoming-item" onclick="app.openRecordPanel('${ev.viewType}','${ev.id}')">
-                <div class="upcoming-item-name">${ev.name}</div>
-                <div class="upcoming-item-type">${ev.type}</div>
-              </div>`).join('') || '<div class="text-muted text-sm" style="padding:8px">Nothing today</div>'}
+        <div class="calendar-nav-group">
+          <button class="gos-btn btn-sm" onclick="app._navigateCalendar(-1)">◀ Prev</button>
+          <button class="gos-btn btn-sm" onclick="app._navigateCalendar(0)">Today</button>
+          <button class="gos-btn btn-sm" onclick="app._navigateCalendar(1)">Next ▶</button>
+        </div>
+        <div class="calendar-layout-title">${this.getCalendarLayoutTitle()}</div>
+      </div>
+    `;
+
+    let gridHtml = '';
+    if (layout === 'month') {
+      gridHtml = this.renderMonthView(filtered);
+    } else if (layout === 'week') {
+      gridHtml = this.renderWeekView(filtered);
+    } else {
+      gridHtml = this.renderDayView(filtered);
+    }
+
+    return `
+      <div class="calendar-view-container">
+        ${layoutToggles}
+        ${gridHtml}
+      </div>
+    `;
+  }
+
+  getCalendarLayoutTitle() {
+    const layout = this._calLayout || 'month';
+    const activeDate = this._calActiveDate;
+    const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    
+    if (layout === 'month') {
+      return `${months[activeDate.getMonth()]} ${activeDate.getFullYear()}`;
+    } else if (layout === 'week') {
+      const now = new Date(activeDate);
+      const currentDay = now.getDay();
+      const startOfWeek = new Date(now);
+      startOfWeek.setDate(now.getDate() - currentDay);
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(startOfWeek.getDate() + 6);
+      
+      const sMonth = months[startOfWeek.getMonth()].slice(0,3);
+      const eMonth = months[endOfWeek.getMonth()].slice(0,3);
+      
+      return `${sMonth} ${startOfWeek.getDate()} – ${eMonth} ${endOfWeek.getDate()}, ${endOfWeek.getFullYear()}`;
+    } else {
+      return `${months[activeDate.getMonth()]} ${activeDate.getDate()}, ${activeDate.getFullYear()}`;
+    }
+  }
+
+  renderMonthView(events) {
+    const activeDate = this._calActiveDate;
+    const year = activeDate.getFullYear();
+    const month = activeDate.getMonth();
+    const todayStr = getDemoToday();
+    
+    const firstDay = new Date(year, month, 1);
+    const firstDayOfWeek = firstDay.getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    
+    const headers = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const headersHtml = headers.map(h => `<div class="cal-grid-header">${h}</div>`).join('');
+    
+    const cells = [];
+    const prevMonthDays = new Date(year, month, 0).getDate();
+    for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+      cells.push(`<div class="cal-grid-cell padding-cell">${prevMonthDays - i}</div>`);
+    }
+    
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const dayEvents = events.filter(e => e.date === dateStr);
+      const isToday = dateStr === todayStr;
+      
+      const eventsListHtml = dayEvents.map(ev => {
+        const isOverdue = this.isEventOverdue(ev);
+        const catColor = settingsEngine.getCategory(ev.category)?.color || '#6366f1';
+        return `
+          <div class="cal-grid-event-pill ${isOverdue ? 'overdue' : ''}" 
+               style="border-left: 3px solid ${catColor}"
+               onclick="event.stopPropagation(); app.openRecordPanel('${ev.viewType}', '${ev.id}')"
+               title="${ev.time} ${ev.name} (${ev.type})">
+            <span class="event-pill-time">${ev.time.replace(':00','')}</span>
+            <span class="event-pill-name">${ev.name}</span>
           </div>
-          <div class="upcoming-section">
-            <div class="upcoming-section-title">⏰ Overdue (${overdueEvents.length})</div>
-            ${overdueEvents.slice(0,4).map(ev => `
-              <div class="upcoming-item" onclick="app.openRecordPanel('${ev.viewType}','${ev.id}')">
-                <div class="upcoming-item-name" style="color:var(--red)">${ev.name}</div>
-                <div class="upcoming-item-type">${ev.type} — ${ev.date}</div>
-              </div>`).join('') || '<div class="text-muted text-sm" style="padding:8px">No overdue items</div>'}
+        `;
+      }).join('');
+      
+      cells.push(`
+        <div class="cal-grid-cell ${isToday ? 'today' : ''}" onclick="app.showCellDetails('${dateStr}')">
+          <span class="cell-day-num">${d}</span>
+          <div class="cell-events-container">${eventsListHtml}</div>
+        </div>
+      `);
+    }
+    
+    const totalCells = cells.length;
+    const remaining = 42 - totalCells;
+    for (let i = 1; i <= remaining; i++) {
+      cells.push(`<div class="cal-grid-cell padding-cell">${i}</div>`);
+    }
+    
+    return `
+      <div class="calendar-month-grid">
+        ${headersHtml}
+        ${cells.join('')}
+      </div>
+    `;
+  }
+
+  showCellDetails(dateStr) {
+    this._calActiveDate = new Date(dateStr);
+    this._calLayout = 'day';
+    localStorage.setItem('gos_calendar_layout_pref', 'day');
+    this.renderContent();
+  }
+
+  renderWeekView(events) {
+    const activeDate = this._calActiveDate;
+    const currentDay = activeDate.getDay();
+    const todayStr = getDemoToday();
+    
+    const startOfWeek = new Date(activeDate);
+    startOfWeek.setDate(activeDate.getDate() - currentDay);
+    
+    const weekDays = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(startOfWeek);
+      d.setDate(startOfWeek.getDate() + i);
+      weekDays.push(d);
+    }
+    
+    const weekColumns = weekDays.map(date => {
+      const dateStr = date.toISOString().slice(0, 10);
+      const dayEvents = events.filter(e => e.date === dateStr);
+      const isToday = dateStr === todayStr;
+      
+      const dayName = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][date.getDay()];
+      const formattedDate = `${dayName} ${date.getDate()}`;
+      const eventsHtml = dayEvents.map(ev => this.renderEventMiniCard(ev)).join('');
+      
+      return `
+        <div class="cal-week-column ${isToday ? 'today' : ''}" onclick="app.showCellDetails('${dateStr}')">
+          <div class="cal-week-column-header">
+            <span class="week-day-name">${formattedDate}</span>
+            ${dayEvents.length > 0 ? `<span class="week-day-count">${dayEvents.length}</span>` : ''}
           </div>
-          <div class="upcoming-section">
-            <div class="upcoming-section-title">🔜 Upcoming (${futureEvents.length})</div>
-            ${futureEvents.slice(0,5).map(ev => `
-              <div class="upcoming-item" onclick="app.openRecordPanel('${ev.viewType}','${ev.id}')">
-                <div class="upcoming-item-name">${ev.name}</div>
-                <div class="upcoming-item-type">${ev.date} · ${ev.type}</div>
-              </div>`).join('') || '<div class="text-muted text-sm" style="padding:8px">No upcoming events</div>'}
+          <div class="cal-week-events-list">
+            ${eventsHtml || '<div class="cal-week-empty">No events</div>'}
           </div>
+        </div>
+      `;
+    }).join('');
+    
+    return `
+      <div class="calendar-week-grid">
+        ${weekColumns}
+      </div>
+    `;
+  }
+
+  renderDayView(events) {
+    const activeDate = this._calActiveDate;
+    const dateStr = activeDate.toISOString().slice(0, 10);
+    const dayEvents = events.filter(e => e.date === dateStr);
+    const eventsHtml = dayEvents.map(ev => this.renderEventBigCard(ev)).join('');
+    
+    return `
+      <div class="calendar-day-view">
+        <div class="day-view-header">Events for ${this.getCalendarLayoutTitle()}</div>
+        <div class="day-events-list">
+          ${eventsHtml || `
+            <div class="gos-empty" style="padding: 40px;">
+              <span class="gos-empty-icon">📅</span>
+              <span class="gos-empty-title">No events scheduled for this day</span>
+              <button class="btn-secondary btn-sm" style="margin-top:12px" onclick="app._navigateCalendar(0)">Back to Today</button>
+            </div>
+          `}
         </div>
       </div>
     `;
   }
 
+  renderEventMiniCard(ev) {
+    const isOverdue = this.isEventOverdue(ev);
+    const catColor = settingsEngine.getCategory(ev.category)?.color || '#6366f1';
+    return `
+      <div class="cal-event-mini-card ${isOverdue ? 'overdue' : ''}" 
+           style="border-left: 3px solid ${catColor}"
+           onclick="event.stopPropagation(); app.openRecordPanel('${ev.viewType}', '${ev.id}')">
+        <div class="mini-card-time">${isOverdue ? '⚠️ OVERDUE · ' : ''}${ev.time}</div>
+        <div class="mini-card-name">${ev.name}</div>
+        <div class="mini-card-type">${ev.type}</div>
+      </div>
+    `;
+  }
+
+  renderEventBigCard(ev) {
+    const isOverdue = this.isEventOverdue(ev);
+    const catColor = settingsEngine.getCategory(ev.category)?.color || '#6366f1';
+    const catLabel = settingsEngine.getCategoryLabel(ev.category);
+    const isDone = ['Done', 'Completed', 'Confirmed', 'Closed', 'Won'].includes(ev.status);
+    
+    const overdueLabel = isOverdue ? `<span class="overdue-tag">⚠️ OVERDUE</span>` : '';
+    const priorityClass = ev.priority === 'Critical' ? 'critical' : ev.priority === 'High' ? 'high' : 'medium';
+    
+    return `
+      <div class="cal-event-big-card ${isOverdue ? 'overdue' : ''}" style="border-left: 4px solid ${catColor}">
+        <div class="big-card-header">
+          <div class="big-card-time-type">
+            <span class="big-card-time">⏰ ${ev.time}</span>
+            <span class="big-card-type-tag" style="background:${catColor}33; color:${catColor}">${ev.type}</span>
+            ${overdueLabel}
+          </div>
+          <span class="priority-badge ${priorityClass}">${ev.priority}</span>
+        </div>
+        <div class="big-card-body" onclick="app.openRecordPanel('${ev.viewType}', '${ev.id}')">
+          <div class="big-card-lead-name">${ev.name}</div>
+          <div class="big-card-meta-row">
+            <span class="meta-label">Category:</span>
+            <span class="meta-value">${catLabel}</span>
+          </div>
+          <div class="big-card-meta-row">
+            <span class="meta-label">Status:</span>
+            <span class="meta-value">${this.renderBadge(ev.status)}</span>
+          </div>
+          ${ev.nextAction ? `
+            <div class="big-card-next-action">
+              <strong>Next Action:</strong> ${ev.nextAction}
+            </div>
+          ` : ''}
+        </div>
+        <div class="big-card-actions">
+          <button class="gos-btn btn-sm btn-ghost" onclick="app.openRecordPanel('${ev.viewType}', '${ev.id}')" style="min-height:44px;">👁️ View</button>
+          <button class="gos-btn btn-sm btn-ghost" onclick="app.openMessageForRecord('${ev.viewType}', '${ev.id}')" style="min-height:44px;">💬 Msg</button>
+          <button class="gos-btn btn-sm btn-ghost" onclick="app.copyMessageDirectly('${ev.viewType}', '${ev.id}')" style="min-height:44px;">📋 Copy</button>
+          ${!isDone ? `
+            <button class="gos-btn btn-sm btn-primary" onclick="app.markEventCompleted('${ev.viewType}', '${ev.id}')" style="min-height:44px;">✓ Done</button>
+          ` : ''}
+          <button class="gos-btn btn-sm btn-secondary" onclick="app.rescheduleEvent('${ev.viewType}', '${ev.id}')" style="min-height:44px;">📅 Reschedule</button>
+        </div>
+      </div>
+    `;
+  }
+
+  renderListLayout(filtered) {
+    if (filtered.length === 0) {
+      return `
+        <div class="gos-empty" style="padding: 40px;">
+          <span class="gos-empty-icon">📋</span>
+          <span class="gos-empty-title">No activities scheduled in List View</span>
+          <span class="gos-empty-desc">Try resetting your filters or add activities.</span>
+        </div>
+      `;
+    }
+
+    const renderSortHeader = (key, label) => {
+      const isSorted = this._calSortKey === key;
+      const arrow = isSorted ? (this._calSortDir === 'asc' ? ' ▲' : ' ▼') : '';
+      return `<th onclick="app._toggleCalSort('${key}')" class="sortable-header ${isSorted ? 'sorted' : ''}">${label}${arrow}</th>`;
+    };
+
+    const desktopTable = `
+      <div class="list-view-desktop-table-container gos-table-wrap">
+        <table class="gos-table">
+          <thead>
+            <tr>
+              ${renderSortHeader('date', 'Date')}
+              ${renderSortHeader('time', 'Time')}
+              ${renderSortHeader('name', 'Lead / Contact')}
+              ${renderSortHeader('category', 'Category')}
+              ${renderSortHeader('type', 'Event Type')}
+              ${renderSortHeader('priority', 'Priority')}
+              ${renderSortHeader('status', 'Status')}
+              ${renderSortHeader('nextAction', 'Next Action')}
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filtered.map(ev => {
+              const isOverdue = this.isEventOverdue(ev);
+              const catColor = settingsEngine.getCategory(ev.category)?.color || '#6366f1';
+              const catLabel = settingsEngine.getCategoryLabel(ev.category);
+              const isDone = ['Done', 'Completed', 'Confirmed', 'Closed', 'Won'].includes(ev.status);
+              
+              return `
+                <tr class="${isOverdue ? 'row-overdue' : ''}">
+                  <td class="cell-date font-semibold">${isOverdue ? '⚠️ ' : ''}${ev.date}</td>
+                  <td>${ev.time}</td>
+                  <td class="cell-name clickable" onclick="app.openRecordPanel('${ev.viewType}', '${ev.id}')">${ev.name}</td>
+                  <td>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                      <span class="category-color-dot" style="background:${catColor}; width:8px; height:8px;"></span>
+                      <span>${catLabel}</span>
+                    </div>
+                  </td>
+                  <td><span class="type-badge">${ev.type}</span></td>
+                  <td><span class="priority-badge ${ev.priority.toLowerCase()}">${ev.priority}</span></td>
+                  <td>${this.renderBadge(ev.status)}</td>
+                  <td class="cell-next-action truncate" style="max-width: 180px;" title="${ev.nextAction}">${ev.nextAction}</td>
+                  <td>
+                    <div class="row-action-buttons" style="display:flex; gap:4px;">
+                      <button class="gos-btn btn-sm btn-ghost" onclick="app.openRecordPanel('${ev.viewType}', '${ev.id}')" title="View Detail" style="min-height:36px; padding:4px 8px;">👁️</button>
+                      <button class="gos-btn btn-sm btn-ghost" onclick="app.openMessageForRecord('${ev.viewType}', '${ev.id}')" title="Message" style="min-height:36px; padding:4px 8px;">💬</button>
+                      <button class="gos-btn btn-sm btn-ghost" onclick="app.copyMessageDirectly('${ev.viewType}', '${ev.id}')" title="Copy Message" style="min-height:36px; padding:4px 8px;">📋</button>
+                      ${!isDone ? `
+                        <button class="gos-btn btn-sm btn-primary" onclick="app.markEventCompleted('${ev.viewType}', '${ev.id}')" title="Mark Done" style="min-height:36px; padding:4px 8px;">✓</button>
+                      ` : ''}
+                      <button class="gos-btn btn-sm btn-secondary" onclick="app.rescheduleEvent('${ev.viewType}', '${ev.id}')" title="Reschedule" style="min-height:36px; padding:4px 8px;">📅</button>
+                    </div>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    const mobileCards = `
+      <div class="list-view-mobile-cards-container">
+        ${filtered.map(ev => this.renderEventBigCard(ev)).join('')}
+      </div>
+    `;
+
+    return `
+      <div class="calendar-list-view-container">
+        ${desktopTable}
+        ${mobileCards}
+      </div>
+    `;
+  }
+
+  _setCalViewMode(mode) {
+    this._calViewMode = mode;
+    localStorage.setItem('gos_calendar_view_pref', mode);
+    this.renderContent();
+  }
+
+  _setCalLayout(layout) {
+    this._calLayout = layout;
+    localStorage.setItem('gos_calendar_layout_pref', layout);
+    this.renderContent();
+  }
+
   _setCalFilter(f) {
     this._calFilter = f;
     this.renderContent();
+  }
+
+  _setCalTypeFilter(type) {
+    this._calTypeFilter = type;
+    this.renderContent();
+  }
+
+  _setCalCatFilter(cat) {
+    this._calCatFilter = cat;
+    this.renderContent();
+  }
+
+  _setCalPriorityFilter(pri) {
+    this._calPriorityFilter = pri;
+    this.renderContent();
+  }
+
+  _setCalStatusFilter(stat) {
+    this._calStatusFilter = stat;
+    this.renderContent();
+  }
+
+  _toggleCalSort(key) {
+    if (this._calSortKey === key) {
+      this._calSortDir = this._calSortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      this._calSortKey = key;
+      this._calSortDir = 'asc';
+    }
+    this.renderContent();
+  }
+
+  _navigateCalendar(dir) {
+    const layout = this._calLayout || 'month';
+    const activeDate = this._calActiveDate;
+    
+    if (dir === 0) {
+      this._calActiveDate = new Date();
+    } else if (layout === 'month') {
+      this._calActiveDate.setMonth(activeDate.getMonth() + dir);
+    } else if (layout === 'week') {
+      this._calActiveDate.setDate(activeDate.getDate() + (dir * 7));
+    } else if (layout === 'day') {
+      this._calActiveDate.setDate(activeDate.getDate() + dir);
+    }
+    
+    this.renderContent();
+  }
+
+  copyMessageDirectly(viewType, id) {
+    const dataMap = {
+      'linkedin': { data: this.data.linkedinLeads, idKey: 'leadId' },
+      'prime': { data: this.data.primePipeline, idKey: 'opportunityId' },
+      'calmera': { data: this.data.calmeraOrders, idKey: 'orderId' },
+      'scc': { data: this.data.sccContent, idKey: 'contentId' },
+    };
+
+    const config = dataMap[viewType];
+    if (!config) {
+      this.showToast('Templates not supported for manual tasks', 'warning');
+      return;
+    }
+
+    const record = config.data.find(r => r[config.idKey] === id);
+    if (!record) return;
+
+    let stream = 'linkedin';
+    if (viewType === 'prime') stream = 'prime';
+    else if (viewType === 'calmera') stream = 'calmera';
+    else if (viewType === 'scc') stream = 'scc';
+
+    let msg = '';
+    try {
+      const templates = MessageGenerator.getTemplates(stream);
+      const template = templates[0];
+      if (template) {
+        const name = record.contactName || record.fullName || record.customerName || '[Name]';
+        const offer = record.serviceInterest || record.itemsSummary || '[Offer]';
+        const result = MessageGenerator.fillTemplate(template, { name, company: offer, serviceInterest: offer });
+        msg = result.body;
+      }
+    } catch (e) {
+      console.warn(e);
+    }
+
+    if (!msg) {
+      msg = `Hi ${record.contactName || 'there'}! Just checking in regarding ${record.nextAction || 'our next step'}. Let me know what you think!`;
+    }
+
+    navigator.clipboard.writeText(msg).then(() => {
+      this.showToast('Message generated & copied directly! 📋', 'success');
+    }).catch(() => {
+      this.showToast('Copy failed — please copy manually', 'error');
+    });
+  }
+
+  async markEventCompleted(viewType, id) {
+    let fields = {};
+    if (viewType === 'linkedin') {
+      fields = { stage: 'Done', nextAction: 'Completed', nextActionDate: '' };
+    } else if (viewType === 'prime') {
+      fields = { stage: 'Won', nextAction: 'Completed', nextActionDate: '' };
+    } else if (viewType === 'calmera') {
+      fields = { reconfirmationStatus: 'Confirmed' };
+    } else if (viewType === 'tasks') {
+      fields = { status: 'Completed', completedAt: getDemoToday() };
+    } else if (viewType === 'scc') {
+      fields = { CTA: 'Published' };
+    }
+
+    await this.updateRecordField(viewType, id, fields);
+  }
+
+  async rescheduleEvent(viewType, id) {
+    const dataMap = {
+      'linkedin': { data: this.data.linkedinLeads, idKey: 'leadId', dateKey: 'nextActionDate' },
+      'prime': { data: this.data.primePipeline, idKey: 'opportunityId', dateKey: 'nextActionDate' },
+      'calmera': { data: this.data.calmeraOrders, idKey: 'orderId', dateKey: 'fulfillmentCutoff' },
+      'scc': { data: this.data.sccContent, idKey: 'contentId', dateKey: 'plannedPublishAt' },
+      'tasks': { data: this.data.tasks, idKey: 'taskId', dateKey: 'dueAt' },
+    };
+
+    const config = dataMap[viewType];
+    if (!config) return;
+
+    const record = config.data.find(r => r[config.idKey] === id);
+    if (!record) return;
+
+    const oldDate = record[config.dateKey] || '';
+    const newDate = prompt(`Enter new date for this event (YYYY-MM-DD):`, oldDate);
+    
+    if (newDate === null) return;
+    
+    const dateTrim = newDate.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateTrim.slice(0, 10))) {
+      this.showToast('Invalid date format. Use YYYY-MM-DD.', 'warning');
+      return;
+    }
+
+    const fields = {};
+    fields[config.dateKey] = dateTrim;
+
+    await this.updateRecordField(viewType, id, fields);
+  }
+
+  async updateRecordField(viewType, id, fields) {
+    const dataMap = {
+      'linkedin': { data: this.data.linkedinLeads, idKey: 'leadId', tabKey: 'linkedinLeads' },
+      'prime': { data: this.data.primePipeline, idKey: 'opportunityId', tabKey: 'primePipeline' },
+      'scc': { data: this.data.sccContent, idKey: 'contentId', tabKey: 'sccContent' },
+      'calmera': { data: this.data.calmeraOrders, idKey: 'orderId', tabKey: 'calmeraOrders' },
+      'tasks': { data: this.data.tasks, idKey: 'taskId', tabKey: 'tasks' },
+    };
+
+    const config = dataMap[viewType];
+    if (!config) return;
+
+    const record = config.data.find(r => r[config.idKey] === id);
+    if (!record) return;
+
+    // Apply fields
+    Object.assign(record, fields);
+
+    // Refresh UI
+    this.applyFilters();
+    this.render();
+    this.showToast('Updated successfully!', 'success');
+
+    // Sync in background to Sheets if connected
+    if (this.sheetsConnected) {
+      const rowIndex = record._rowIndex;
+      if (rowIndex !== undefined) {
+        try {
+          await sheetsService.updateRecord(config.tabKey, rowIndex, record);
+          this.showToast('📤 Synced to Google Sheets', 'success');
+        } catch (err) {
+          console.error('Sheet update failed:', err);
+          this.showToast('Saved locally, failed to sync to Sheets', 'warning');
+        }
+      }
+    }
   }
 
   // ── Messages Page ────────────────────────────────────────────
