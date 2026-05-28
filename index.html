@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Gelo Growth OS — Unified operating system for prospects, community content, orders, and repurposed growth assets.">
+  <title>Gelo Growth OS — Command Center</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>">
+</head>
+<body>
+
+<div class="gos-app">
+
+  <!-- ═══════════════════ SIDEBAR ═══════════════════ -->
+  <aside class="gos-sidebar">
+    <div class="gos-logo">
+      <div class="gos-logo-icon">G</div>
+      <div class="gos-logo-text">
+        <span class="gos-logo-title">Gelo Growth OS</span>
+        <span class="gos-logo-subtitle">Operations Hub</span>
+      </div>
+    </div>
+
+    <nav class="gos-nav">
+      <div class="gos-nav-section">
+        <div class="gos-nav-label">Overview</div>
+        <a class="gos-nav-item active" data-view="command-center" href="#">
+          <span class="gos-nav-icon">⚡</span>
+          <span>Command Center</span>
+          <span class="gos-nav-badge" id="nav-badge-overdue">2</span>
+        </a>
+      </div>
+
+      <div class="gos-nav-section">
+        <div class="gos-nav-label">Growth Streams</div>
+        <a class="gos-nav-item" data-view="linkedin" href="#">
+          <span class="gos-nav-icon">🔗</span>
+          <span>LinkedIn Leads</span>
+        </a>
+        <a class="gos-nav-item" data-view="prime" href="#">
+          <span class="gos-nav-icon">💼</span>
+          <span>Prime Pipeline</span>
+        </a>
+        <a class="gos-nav-item" data-view="scc" href="#">
+          <span class="gos-nav-icon">🌿</span>
+          <span>Self Care Club</span>
+        </a>
+        <a class="gos-nav-item" data-view="calmera" href="#">
+          <span class="gos-nav-icon">📦</span>
+          <span>Calmera Orders</span>
+        </a>
+        <a class="gos-nav-item" data-view="repurposing" href="#">
+          <span class="gos-nav-icon">🔄</span>
+          <span>Repurposing</span>
+        </a>
+      </div>
+    </nav>
+
+    <div class="gos-sidebar-footer">
+      <!-- Connection status -->
+      <div id="sheets-status">
+        <div class="gos-demo-badge" id="status-demo">
+          <span class="dot"></span>
+          Demo Mode — sample data
+        </div>
+        <div class="gos-demo-badge" id="status-connected" style="display:none; background:var(--green-muted); border-color:rgba(16,185,129,0.2); color:var(--green-text)">
+          <span class="dot" style="background:var(--green)"></span>
+          Connected to Google Sheets
+        </div>
+        <div class="gos-demo-badge" id="status-loading" style="display:none; background:var(--blue-muted); border-color:rgba(59,130,246,0.2); color:var(--blue-text)">
+          <span class="dot" style="background:var(--blue)"></span>
+          Loading from Sheets...
+        </div>
+      </div>
+      <div style="margin-top:10px; display:flex; gap:8px">
+        <button class="gos-btn gos-btn-primary gos-btn-sm" id="btn-connect" onclick="app.connectSheets()" style="flex:1">🔗 Connect Sheets</button>
+        <button class="gos-btn gos-btn-danger gos-btn-sm" id="btn-disconnect" onclick="app.disconnectSheets()" style="display:none">Disconnect</button>
+        <button class="gos-btn gos-btn-ghost gos-btn-sm" id="btn-refresh" onclick="app.refreshFromSheets()" style="display:none" title="Refresh data">🔄</button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ═══════════════════ MAIN CONTENT ═══════════════════ -->
+  <main class="gos-main">
+
+    <!-- Top Bar -->
+    <header class="gos-topbar">
+      <div class="gos-topbar-left">
+        <h1 class="gos-view-title" id="view-title">Daily Command Center</h1>
+        <p class="gos-view-subtitle" id="view-subtitle">Your daily action hub — overdue, due today, and upcoming tasks</p>
+      </div>
+      <div class="gos-filters">
+        <select class="gos-filter" id="filter-status">
+          <option value="all">All Statuses</option>
+        </select>
+        <select class="gos-filter" id="filter-priority">
+          <option value="all">All Priorities</option>
+          <option value="Critical">Critical</option>
+          <option value="High">High</option>
+          <option value="Normal">Normal</option>
+          <option value="Low">Low</option>
+        </select>
+        <input type="text" class="gos-search" id="global-search" placeholder="Search records...">
+      </div>
+      <div class="gos-topbar-actions">
+        <button class="gos-btn gos-btn-secondary" id="btn-message-gen" title="Message Generator">✉️ Messages</button>
+        <button class="gos-btn gos-btn-primary" id="btn-add-record">+ Add Record</button>
+      </div>
+    </header>
+
+    <!-- Dynamic Content Area -->
+    <div class="gos-content" id="main-content">
+      <!-- Rendered by app.js -->
+    </div>
+
+  </main>
+
+  <!-- ═══════════════════ DETAIL PANEL ═══════════════════ -->
+  <div class="gos-panel-overlay" id="panel-overlay"></div>
+  <div class="gos-panel" id="detail-panel">
+    <div class="gos-panel-header">
+      <h2 class="gos-panel-title" id="panel-title">Record Details</h2>
+      <button class="gos-panel-close" id="panel-close">✕</button>
+    </div>
+    <div class="gos-panel-body" id="panel-body">
+      <!-- Rendered dynamically -->
+    </div>
+    <div class="gos-panel-footer" id="panel-footer">
+      <button class="gos-btn gos-btn-secondary" onclick="app.closePanel()">Close</button>
+      <button class="gos-btn gos-btn-primary" onclick="app.selectedRecord && app.openMessageForRecord(app.selectedRecord.viewType, app.selectedRecord.record[Object.keys(app.selectedRecord.record).find(k => k.endsWith('Id') && k !== 'contactId' && k !== 'organizationId' && k !== 'sourceLeadId') || 'id'])">✉️ Generate Message</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ ADD RECORD MODAL ═══════════════════ -->
+  <div class="gos-modal-overlay" id="add-modal-overlay">
+    <div class="gos-modal">
+      <div class="gos-modal-header">
+        <h2 class="gos-modal-title">Add New Record</h2>
+        <button class="gos-panel-close" id="modal-close">✕</button>
+      </div>
+      <form id="add-form">
+        <div class="gos-modal-body" id="add-form-body">
+          <!-- Form fields rendered by app.js -->
+        </div>
+        <div class="gos-modal-footer">
+          <button type="button" class="gos-btn gos-btn-secondary" onclick="app.closeModal('add-modal')">Cancel</button>
+          <button type="submit" class="gos-btn gos-btn-primary">💾 Save Record</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ MESSAGE GENERATOR MODAL ═══════════════════ -->
+  <div class="gos-modal-overlay" id="msg-modal-overlay">
+    <div class="gos-modal" style="max-width: 720px">
+      <div class="gos-modal-header">
+        <h2 class="gos-modal-title">✉️ Message Generator</h2>
+        <button class="gos-panel-close" id="msg-modal-close">✕</button>
+      </div>
+      <div class="gos-modal-body" id="msg-body">
+        <!-- Templates rendered by app.js -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════ TOAST CONTAINER ═══════════════════ -->
+  <div class="gos-toast-container" id="toast-container"></div>
+
+</div>
+
+
+<!-- App Scripts -->
+
+<script src="demo-data.js"></script>
+<script src="message-templates.js"></script>
+<script src="sheets-config.js"></script>
+<script src="app.js"></script>
+
+</body>
+</html>
