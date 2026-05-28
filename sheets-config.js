@@ -232,6 +232,22 @@ class SheetsService {
     return result;
   }
 
+  // ── Delete Record ─────────────────────────────────────────
+  async deleteRecord(jsKey, rowIndex) {
+    const tabName = JS_KEY_TO_TAB[jsKey];
+    if (!tabName) throw new Error(`Unknown collection: ${jsKey}`);
+
+    const response = await fetch(SHEETS_CONFIG.WEBAPP_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'delete', tab: tabName, rowIndex }),
+    });
+
+    const result = await response.json();
+    if (result.error) throw new Error(result.error);
+    return result;
+  }
+
   // ── Sign In/Out (simplified — just flags) ─────────────────
   signIn()  { this.isSignedIn = true; }
   signOut() { this.isSignedIn = false; }

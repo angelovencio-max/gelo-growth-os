@@ -62,12 +62,17 @@ function doPost(e) {
       return sendJSON({ success: true, action: 'update', tab: tab, row: rowIndex });
     }
 
+    if (action === 'delete' && tab && rowIndex !== undefined) {
+      deleteRow(tab, rowIndex);
+      return sendJSON({ success: true, action: 'delete', tab: tab, row: rowIndex });
+    }
+
     if (action === 'batchAppend' && tab && Array.isArray(data)) {
       const result = batchAppendRows(tab, data);
       return sendJSON({ success: true, action: 'batchAppend', tab: tab, rowsAdded: data.length, rowsAfter: result });
     }
 
-    return sendJSON({ error: 'Invalid action. Use: append, update, or batchAppend' });
+    return sendJSON({ error: 'Invalid action. Use: append, update, delete, or batchAppend' });
 
   } catch (err) {
     return sendJSON({ error: err.message });
@@ -189,6 +194,17 @@ function updateRow(tabName, rowIndex, data) {
   const sheetRow = rowIndex + 2; // +1 for header, +1 for 1-indexed
 
   sheet.getRange(sheetRow, 1, 1, headers.length).setValues([row]);
+}
+
+
+// ── Delete Row ────────────────────────────────────────────────
+function deleteRow(tabName, rowIndex) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(tabName);
+  if (!sheet) throw new Error(`Tab "${tabName}" not found`);
+  
+  const sheetRow = rowIndex + 2; // +1 for header, +1 for 1-indexed
+  sheet.deleteRow(sheetRow);
 }
 
 

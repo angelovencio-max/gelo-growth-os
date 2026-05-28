@@ -860,6 +860,7 @@ class GeloGrowthOS {
       const idVal = record[idFieldName];
       panelFooter.innerHTML = `
         <button class="gos-btn gos-btn-secondary" onclick="app.closePanel()">Close</button>
+        <button class="gos-btn gos-btn-danger" onclick="app.deleteSelectedRecord()" style="margin-right:auto">🗑️ Delete</button>
         <button class="gos-btn gos-btn-ghost" onclick="app.editSelectedRecord()">✏️ Edit Details</button>
         <button class="gos-btn gos-btn-primary" onclick="app.openMessageForRecord('${viewType}', '${idVal}')">✉️ Generate Message</button>
       `;
@@ -1217,16 +1218,64 @@ class GeloGrowthOS {
           this.showToast('📤 Saved to Google Sheets', 'success');
         } catch (err) {
           console.error('Sheet update failed:', err);
-          this.showToast('⚠️ Sheet write failed. Reverting changes...', 'danger');
-          // Revert local data
-          Object.assign(record, oldRecord);
-          sheetsService._denormalize(this.data);
-          this.applyFilters();
-          this.render();
-          this.openRecordPanel(viewType, record[config.idKey]);
+          this.showToast('⚠️ Saved locally, but failed to sync to Google Sheets. Check your Apps Script deployment!', 'warning');
         }
       } else {
         this.showToast('⚠️ Sheet row index not found. Saved only locally.', 'warning');
+      }
+    }
+  }
+
+  async deleteSelectedRecord() {
+    if (!this.selectedRecord) return;
+    const { viewType, record } = this.selectedRecord;
+
+    const confirmMsg = `Are you sure you want to permanently delete this ${viewType === 'linkedin' ? 'lead' : viewType === 'prime' ? 'opportunity' : 'record'}?\n\nThis will remove it from the dashboard and delete its row in your Google Sheet!`;
+    if (!confirm(confirmMsg)) return;
+
+    const dataMap = {
+      'linkedin': { data: this.data.linkedinLeads, idKey: 'leadId', tabKey: 'linkedinLeads' },
+      'prime': { data: this.data.primePipeline, idKey: 'opportunityId', tabKey: 'primePipeline' },
+      'scc': { data: this.data.sccContent, idKey: 'contentId', tabKey: 'sccContent' },
+      'calmera': { data: this.data.calmeraOrders, idKey: 'orderId', tabKey: 'calmeraOrders' },
+      'repurposing': { data: this.data.repurposeOutputs, idKey: 'outputId', tabKey: 'repurposeOutputs' },
+    };
+
+    const config = dataMap[viewType];
+    if (!config) return;
+
+    const rowIndex = record._rowIndex;
+    const recordId = record[config.idKey];
+
+    // Remove from local array
+    const index = config.data.findIndex(r => r[config.idKey] === recordId);
+    if (index !== -1) {
+      config.data.splice(index, 1);
+    }
+
+    // Shift row indices of other records in the same collection
+    config.data.forEach(r => {
+      if (r._rowIndex !== undefined && r._rowIndex > rowIndex) {
+        r._rowIndex--;
+      }
+    });
+
+    // Close details panel immediately
+    this.closePanel();
+
+    // Re-render
+    this.applyFilters();
+    this.render();
+    this.showToast('Record deleted locally!', 'success');
+
+    // Sync in background to Sheets (if connected)
+    if (this.sheetsConnected && rowIndex !== undefined) {
+      try {
+        await sheetsService.deleteRecord(config.tabKey, rowIndex);
+        this.showToast('🗑️ Deleted from Google Sheets', 'success');
+      } catch (err) {
+        console.error('Sheet delete failed:', err);
+        this.showToast('⚠️ Deleted locally, but Google Sheets delete failed.', 'warning');
       }
     }
   }
