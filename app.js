@@ -123,17 +123,26 @@ class GeloGrowthOS {
                 data-module="${mod.id}"
                 onclick="app.navigateTo('${mod.id}')"
                 title="${mod.label}">
-          <span class="nav-item-icon">${mod.icon}</span>
+          <span class="nav-item-icon">${getIconSvg(MODULE_ICON_MAP[mod.id] || 'info', 18)}</span>
           <span class="nav-item-label">${mod.label}</span>
           ${mod.id === 'today' ? '<span class="nav-item-badge" id="nav-badge-overdue" style="display:none">0</span>' : ''}
         </button>
       `).join('');
     }
 
-    // Build mobile bottom-nav labels dynamically
+    // Build mobile bottom-nav labels & icons dynamically
     BOTTOM_NAV_MODULES.forEach(moduleId => {
       const mod = settings.modules.find(m => m.id === moduleId);
       if (!mod) return;
+      
+      const btn = document.getElementById(`mob-nav-${moduleId}`);
+      if (btn) {
+        const iconSpan = btn.querySelector('.mob-nav-icon');
+        if (iconSpan) {
+          iconSpan.innerHTML = getIconSvg(MODULE_ICON_MAP[moduleId] || 'info', 20);
+        }
+      }
+      
       const label = document.getElementById(`mob-label-${moduleId}`);
       if (label) label.textContent = mod.label;
     });
@@ -146,7 +155,7 @@ class GeloGrowthOS {
         <button class="drawer-nav-item ${this.currentModule === mod.id ? 'active' : ''}"
                 data-module="${mod.id}"
                 onclick="app.navigateTo('${mod.id}'); app.closeMoreDrawer();">
-          <span class="drawer-nav-icon">${mod.icon}</span>
+          <span class="drawer-nav-icon">${getIconSvg(MODULE_ICON_MAP[mod.id] || 'info', 18)}</span>
           <span>${mod.label}</span>
         </button>
       `).join('');
@@ -847,91 +856,100 @@ class GeloGrowthOS {
   // ── LinkedIn Leads View ─────────────────────────────────────
   renderLinkedIn(container) {
     const leads = this.data.linkedinLeads;
-    const activeLeads = leads.filter(l => !['Closed', 'Converted'].includes(l.stage));
+    const activeLeads = leads.filter(l => !['Closed', 'Converted', 'Closed Won', 'Closed Lost', 'Not Fit'].includes(l.stage));
     const noAction = activeLeads.filter(l => isOverdue(l.nextActionDate));
-    const avgScore = leads.length > 0 ? Math.round(leads.reduce((s, l) => s + l.qualificationScore, 0) / leads.length) : 0;
-    const converted = leads.filter(l => l.stage === 'Converted').length;
-    const convRate = leads.length > 0 ? Math.round((converted / leads.length) * 100) : 0;
+    const avgScore = leads.length > 0 ? Math.round(leads.reduce((s, l) => s + (l.qualificationScore || 0), 0) / leads.length) : 0;
+    const convertedCount = leads.filter(l => l.convertedToPipeline === 'Yes' || this.data.primePipeline.some(p => String(p.sourceLeadId) === String(l.leadId))).length;
+
+    const dataTableContent = this.renderDataTable(this.filteredData, [
+      { key: 'contactName', label: 'Name', editable: true, editType: 'text', render: (v) => `<span class="cell-name clickable-edit-name">${v || '—'}</span>` },
+      { key: 'company', label: 'Company / Brand', editable: true, editType: 'text' },
+      { key: 'mobile', label: 'Phone Number', editable: true, editType: 'text' },
+      { key: 'email', label: 'Email Address', editable: true, editType: 'text' },
+      { key: 'source', label: 'Source', editable: true, editType: 'select', editOptions: ['LinkedIn', 'Facebook', 'Instagram', 'Network', 'Referral', 'Website', 'Other'] },
+      { key: 'linkedinUrl', label: 'Profile / URL', editable: true, editType: 'text', render: (v) => v ? `<a href="${v.startsWith('http') ? v : 'https://' + v}" target="_blank" class="gos-link" onclick="event.stopPropagation()">${v.replace(/https?:\/\/(www\.)?/, '')}</a>` : '—' },
+      { key: 'stage', label: 'Stage', editable: true, editType: 'select', editOptions: ['New', 'Contacted', 'Qualified', 'Proposal', 'Closed Won', 'Closed Lost', 'Not Fit', 'Connection Sent', 'Connected', 'Thank You Sent', 'Follow-up Due', 'Replied', 'Call Booked', 'Call Done'] },
+      { key: 'qualificationScore', label: 'Score', editable: true, editType: 'number', render: (v) => this.renderScore(v) },
+      { key: 'priority', label: 'Priority', editable: true, editType: 'select', editOptions: ['Low', 'Normal', 'High', 'Urgent'], render: (v) => this.renderBadge(v) },
+      { key: 'nextAction', label: 'Next Action', editable: true, editType: 'select', editOptions: ['Send first message', 'Follow up', 'Book discovery call', 'Send proposal', 'Prepare call notes', 'Check payment', 'Mark as not fit', 'Custom'], render: (v) => `<span class="truncate" style="max-width:150px;display:inline-block">${v || '—'}</span>` },
+      { key: 'nextActionDate', label: 'Follow-up Date', editable: true, editType: 'date', render: (v) => this.renderDueDate(v) },
+      { key: 'projectedCloseAmount', label: 'Projected Close Amount', editable: true, editType: 'number', render: (v) => v ? `₱${this.formatNumber(v)}` : '₱0' },
+    ], 'linkedin', 'leadId', 'Leads');
 
     container.innerHTML = `
       <div class="gos-kpi-grid">
         <div class="gos-kpi-card purple">
-          <div class="gos-kpi-header"><span class="gos-kpi-label">Total Leads</span><span class="gos-kpi-icon">👥</span></div>
+          <div class="gos-kpi-header"><span class="gos-kpi-label">Total Leads</span><span class="gos-kpi-icon">${getIconSvg('users', 18)}</span></div>
           <div class="gos-kpi-value">${leads.length}</div>
           <div class="gos-kpi-detail">${activeLeads.length} active</div>
         </div>
         <div class="gos-kpi-card green">
-          <div class="gos-kpi-header"><span class="gos-kpi-label">Conversion Rate</span><span class="gos-kpi-icon">📈</span></div>
-          <div class="gos-kpi-value">${convRate}%</div>
-          <div class="gos-kpi-detail">${converted} converted</div>
+          <div class="gos-kpi-header"><span class="gos-kpi-label">Converted</span><span class="gos-kpi-icon">${getIconSvg('award', 18)}</span></div>
+          <div class="gos-kpi-value">${convertedCount}</div>
+          <div class="gos-kpi-detail">${convertedCount} converted opportunities</div>
         </div>
         <div class="gos-kpi-card blue">
-          <div class="gos-kpi-header"><span class="gos-kpi-label">Avg Score</span><span class="gos-kpi-icon">⭐</span></div>
+          <div class="gos-kpi-header"><span class="gos-kpi-label">Avg Score</span><span class="gos-kpi-icon">${getIconSvg('star', 18)}</span></div>
           <div class="gos-kpi-value">${avgScore}</div>
           <div class="gos-kpi-detail">of 100 qualification points</div>
         </div>
         <div class="gos-kpi-card ${noAction.length > 0 ? 'red' : 'green'}">
-          <div class="gos-kpi-header"><span class="gos-kpi-label">Overdue Follow-ups</span><span class="gos-kpi-icon">${noAction.length > 0 ? '⚠️' : '✅'}</span></div>
+          <div class="gos-kpi-header"><span class="gos-kpi-label">Overdue Follow-ups</span><span class="gos-kpi-icon">${noAction.length > 0 ? getIconSvg('alert', 18) : getIconSvg('checkCircle', 18)}</span></div>
           <div class="gos-kpi-value">${noAction.length}</div>
           <div class="gos-kpi-detail">${noAction.length > 0 ? 'Need immediate attention' : 'All follow-ups on track'}</div>
         </div>
       </div>
 
-      ${this.renderDataTable(this.filteredData, [
-        { key: 'contactName', label: 'Name', render: (v, r) => `<span class="cell-name">${v}</span><br><span class="cell-company">${r.company}</span>` },
-        { key: 'stage', label: 'Stage', render: (v) => this.renderBadge(v) },
-        { key: 'qualificationScore', label: 'Score', render: (v) => this.renderScore(v) },
-        { key: 'priority', label: 'Priority', render: (v) => this.renderBadge(v) },
-        { key: 'nextAction', label: 'Next Action', render: (v) => `<span class="truncate" style="max-width:200px;display:inline-block">${v || '—'}</span>` },
-        { key: 'nextActionDate', label: 'Follow-up', render: (v) => this.renderDueDate(v) },
-        { key: 'source', label: 'Source' },
-      ], 'linkedin', 'leadId')}
+      ${dataTableContent}
     `;
   }
 
   // ── Prime Pipeline View ─────────────────────────────────────
   renderPrime(container) {
     const pipeline = this.data.primePipeline;
-    const activeDeals = pipeline.filter(p => !['Won', 'Lost'].includes(p.stage));
+    const activeDeals = pipeline.filter(p => !['Closed Won', 'Closed Lost'].includes(p.stage));
     const totalPipeline = activeDeals.reduce((s, p) => s + (p.estimatedValue || 0), 0);
     const totalWeighted = activeDeals.reduce((s, p) => s + (p.weightedValue || 0), 0);
-    const won = pipeline.filter(p => p.stage === 'Won');
-    const lost = pipeline.filter(p => p.stage === 'Lost');
-    const winRate = (won.length + lost.length) > 0 ? Math.round((won.length / (won.length + lost.length)) * 100) : 0;
+    const convertedCount = pipeline.filter(p => p.sourceLeadId).length;
+
+    const totalPaid = pipeline.filter(p => p.paymentStatus === 'Paid').reduce((s, p) => s + (p.estimatedValue || 0), 0);
+    const totalWonPending = pipeline.filter(p => p.stage === 'Closed Won' && p.paymentStatus !== 'Paid').reduce((s, p) => s + (p.estimatedValue || 0), 0);
+    const totalWon = totalPaid + totalWonPending;
 
     container.innerHTML = `
       <div class="gos-kpi-grid">
         <div class="gos-kpi-card purple">
-          <div class="gos-kpi-header"><span class="gos-kpi-label">Total Pipeline</span><span class="gos-kpi-icon">💼</span></div>
+          <div class="gos-kpi-header"><span class="gos-kpi-label">Total Pipeline</span><span class="gos-kpi-icon">${getIconSvg('pipeline', 18)}</span></div>
           <div class="gos-kpi-value">₱${this.formatNumber(totalPipeline)}</div>
           <div class="gos-kpi-detail">${activeDeals.length} active opportunities</div>
         </div>
         <div class="gos-kpi-card blue">
-          <div class="gos-kpi-header"><span class="gos-kpi-label">Weighted Forecast</span><span class="gos-kpi-icon">📊</span></div>
+          <div class="gos-kpi-header"><span class="gos-kpi-label">Weighted Forecast</span><span class="gos-kpi-icon">${getIconSvg('chart', 18)}</span></div>
           <div class="gos-kpi-value">₱${this.formatNumber(totalWeighted)}</div>
           <div class="gos-kpi-detail">probability-adjusted value</div>
         </div>
         <div class="gos-kpi-card green">
-          <div class="gos-kpi-header"><span class="gos-kpi-label">Win Rate</span><span class="gos-kpi-icon">🏆</span></div>
-          <div class="gos-kpi-value">${winRate}%</div>
-          <div class="gos-kpi-detail">${won.length} won / ${lost.length} lost</div>
+          <div class="gos-kpi-header"><span class="gos-kpi-label">Converted</span><span class="gos-kpi-icon">${getIconSvg('award', 18)}</span></div>
+          <div class="gos-kpi-value">${convertedCount}</div>
+          <div class="gos-kpi-detail">${convertedCount} converted opportunities</div>
         </div>
         <div class="gos-kpi-card amber">
-          <div class="gos-kpi-header"><span class="gos-kpi-label">Won Revenue</span><span class="gos-kpi-icon">💰</span></div>
-          <div class="gos-kpi-value">₱${this.formatNumber(won.reduce((s, d) => s + d.estimatedValue, 0))}</div>
-          <div class="gos-kpi-detail">${won.length} closed deals</div>
+          <div class="gos-kpi-header"><span class="gos-kpi-label">Won Revenue</span><span class="gos-kpi-icon">${getIconSvg('dollarSign', 18)}</span></div>
+          <div class="gos-kpi-value">₱${this.formatNumber(totalWon)}</div>
+          <div class="gos-kpi-detail">₱${this.formatNumber(totalPaid)} paid · ₱${this.formatNumber(totalWonPending)} won pending</div>
         </div>
       </div>
 
       ${this.renderDataTable(this.filteredData, [
-        { key: 'contactName', label: 'Contact', render: (v, r) => `<span class="cell-name">${v}</span><br><span class="cell-company">${r.orgName}</span>` },
-        { key: 'serviceInterest', label: 'Service', render: (v) => `<span class="truncate" style="max-width:180px;display:inline-block">${v}</span>` },
-        { key: 'stage', label: 'Stage', render: (v) => this.renderBadge(v) },
-        { key: 'estimatedValue', label: 'Value', render: (v) => `<span class="cell-value">₱${(v || 0).toLocaleString()}</span>` },
-        { key: 'probabilityPercent', label: 'Prob.', render: (v) => `${v || 0}%` },
-        { key: 'weightedValue', label: 'Weighted', render: (v) => `<span class="cell-value">₱${(v || 0).toLocaleString()}</span>` },
-        { key: 'nextAction', label: 'Next Action', render: (v) => `<span class="truncate" style="max-width:180px;display:inline-block">${v || '—'}</span>` },
-        { key: 'nextActionDate', label: 'Due', render: (v) => this.renderDueDate(v) },
+        { key: 'contactName', label: 'Contact', render: (v, r) => `<span class="cell-name clickable-edit-name" onclick="event.stopPropagation(); app.startInlineEdit(this, 'prime', '${r.opportunityId}', 'contactName', 'text')">${v || '—'}</span><br><span class="cell-company clickable-edit-company" onclick="event.stopPropagation(); app.startInlineEdit(this, 'prime', '${r.opportunityId}', 'orgName', 'text')">${r.orgName || 'Company'}</span>` },
+        { key: 'serviceInterest', label: 'Service', editable: true, editType: 'text', render: (v) => `<span class="truncate" style="max-width:180px;display:inline-block">${v}</span>` },
+        { key: 'stage', label: 'Stage', editable: true, editType: 'select', editOptions: ['New Inquiry', 'Qualified', 'Discovery', 'Proposal Sent', 'Negotiation', 'Won', 'Lost', 'Handoff', 'Closed Won', 'Closed Lost'] },
+        { key: 'dealStatus', label: 'Deal Status', editable: true, editType: 'select', editOptions: ['Open', 'In Progress', 'Won', 'Lost', 'Paid', 'Closed'], render: (v) => this.renderBadge(v) },
+        { key: 'paymentStatus', label: 'Payment', editable: true, editType: 'select', editOptions: ['Unpaid', 'Partial', 'Paid', 'Refunded', 'Cancelled'], render: (v) => this.renderBadge(v) },
+        { key: 'estimatedValue', label: 'Value', editable: true, editType: 'number', render: (v) => `<span class="cell-value">₱${(v || 0).toLocaleString()}</span>` },
+        { key: 'probabilityPercent', label: 'Prob.', editable: true, editType: 'number', render: (v) => `${v || 0}%` },
+        { key: 'nextAction', label: 'Next Action', editable: true, editType: 'text', render: (v) => `<span class="truncate" style="max-width:180px;display:inline-block">${v || '—'}</span>` },
+        { key: 'nextActionDate', label: 'Due', editable: true, editType: 'date', render: (v) => this.renderDueDate(v) },
       ], 'prime', 'opportunityId')}
     `;
   }
@@ -1106,7 +1124,7 @@ class GeloGrowthOS {
   // ── Generic Data Table Renderer ─────────────────────────────
   renderDataTable(data, columns, viewType, idKey, title) {
     const tableTitle = title || {
-      'linkedin': 'LinkedIn Leads',
+      'linkedin': 'Leads',
       'prime': 'Pipeline Opportunities',
       'scc': 'Content Calendar',
       'calmera': 'Order Reconfirmations',
@@ -1129,39 +1147,194 @@ class GeloGrowthOS {
       `;
     }
 
+    // Build desktop table HTML (hidden on mobile)
+    const desktopTable = `
+      <div class="gos-table-wrap hide-on-mobile">
+        <table class="gos-table">
+          <thead>
+            <tr>
+              ${columns.map(col => `
+                <th onclick="app.toggleSort('${col.key}')" class="${this.sortConfig.key === col.key ? 'sorted' : ''}">
+                  ${col.label}
+                  <span class="sort-icon">${this.sortConfig.key === col.key ? (this.sortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}</span>
+                </th>
+              `).join('')}
+              <th style="width:100px">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${data.map(record => {
+              const rowCells = columns.map(col => {
+                let content = col.render ? col.render(record[col.key], record) : (record[col.key] || '—');
+                if (col.editable) {
+                  const editOptions = col.editOptions ? JSON.stringify(col.editOptions) : 'null';
+                  content = `
+                    <div class="editable-cell" onclick="event.stopPropagation(); app.startInlineEdit(this, '${viewType}', '${record[idKey]}', '${col.key}', '${col.editType}', ${editOptions})">
+                      <span class="cell-editable-content">${content}</span>
+                      <span class="cell-edit-icon" style="margin-left:4px; opacity:0.3;">✎</span>
+                    </div>
+                  `;
+                }
+                return `<td>${content}</td>`;
+              }).join('');
+
+              let briefcaseBtn = '';
+              if (viewType === 'linkedin') {
+                const alreadyConverted = record.convertedToPipeline === 'Yes' || this.data.primePipeline.some(p => String(p.sourceLeadId) === String(record.leadId));
+                briefcaseBtn = `
+                  <button class="gos-btn gos-btn-ghost gos-btn-sm" 
+                          onclick="event.stopPropagation(); app.convertLeadToPipeline('${record.leadId}')" 
+                          title="Convert to Pipeline Opportunity" 
+                          ${alreadyConverted ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''}>
+                    ${getIconSvg('briefcase', 14)}
+                  </button>
+                `;
+              }
+
+              return `
+                <tr class="clickable" onclick="app.openRecordPanel('${viewType}', '${record[idKey]}')">
+                  ${rowCells}
+                  <td>
+                    <div style="display:flex;gap:6px;">
+                      <button class="gos-btn gos-btn-ghost gos-btn-sm" onclick="event.stopPropagation(); app.openMessageForRecord('${viewType}', '${record[idKey]}')" title="Generate message">${getIconSvg('message-square', 14)}</button>
+                      ${briefcaseBtn}
+                    </div>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+
+    // Build mobile cards HTML (visible on mobile)
+    const mobileCards = `
+      <div class="gos-card-list show-on-mobile mobile-only-cards" style="display:none">
+        ${data.map(record => {
+          if (viewType === 'linkedin') {
+            const mainTitle = record.contactName || 'No Name';
+            const stageBadge = record.stage ? this.renderBadge(record.stage) : '';
+            const priorityBadge = record.priority ? this.renderBadge(record.priority) : '';
+            const amountText = record.projectedCloseAmount ? `₱${this.formatNumber(record.projectedCloseAmount)}` : '₱0';
+            const phoneText = record.mobile || '—';
+            const sourceBadge = record.source ? `<span class="gos-badge badge-purple" style="font-size:11px">${record.source}</span>` : '';
+            
+            const alreadyConverted = record.convertedToPipeline === 'Yes' || this.data.primePipeline.some(p => String(p.sourceLeadId) === String(record.leadId));
+            const briefcaseBtn = `
+              <button class="gos-btn gos-btn-secondary btn-sm" 
+                      style="min-height:36px; padding:4px 10px;"
+                      onclick="event.stopPropagation(); app.convertLeadToPipeline('${record.leadId}')" 
+                      title="Convert to Pipeline" 
+                      ${alreadyConverted ? 'disabled style="opacity:0.3;cursor:not-allowed;"' : ''}>
+                💼 Convert
+              </button>
+            `;
+
+            return `
+              <div class="gos-mobile-card" onclick="app.toggleMobileCardExpansion(this)">
+                <div class="gos-mobile-card-header">
+                  <div class="gos-mobile-card-title">${mainTitle}</div>
+                  <div>${stageBadge}</div>
+                </div>
+                <div class="gos-mobile-card-summary" style="display:flex; flex-wrap:wrap; gap:6px; font-size:12px; color:var(--text-secondary); margin-top:4px;">
+                  <div>📞 ${phoneText}</div>
+                  <div>·</div>
+                  <div>${sourceBadge}</div>
+                  <div>·</div>
+                  <div>💰 ${amountText}</div>
+                  ${record.nextActionDate ? `<div>·</div><div>📅 ${record.nextActionDate}</div>` : ''}
+                </div>
+                
+                <div class="gos-mobile-card-expandable" style="margin-top:12px; border-top:1px solid var(--border); padding-top:12px; display:none;">
+                  <div style="font-size:12px; color:var(--text-secondary); line-height:1.6; margin-bottom:12px;">
+                    ${record.email ? `<div><strong>Email:</strong> ${record.email}</div>` : ''}
+                    ${record.company ? `<div><strong>Company / Brand:</strong> ${record.company}</div>` : ''}
+                    ${record.role ? `<div><strong>Role:</strong> ${record.role}</div>` : ''}
+                    ${record.linkedinUrl ? `<div><strong>Profile / URL:</strong> <a href="${record.linkedinUrl.startsWith('http') ? record.linkedinUrl : 'https://' + record.linkedinUrl}" target="_blank" onclick="event.stopPropagation()" style="color:var(--primary); text-decoration:underline;">${record.linkedinUrl}</a></div>` : ''}
+                    ${record.nextAction ? `<div><strong>Next Action:</strong> ${record.nextAction}</div>` : ''}
+                    ${record.priority ? `<div style="margin-top:4px;"><strong>Priority:</strong> ${priorityBadge}</div>` : ''}
+                    ${record.notes ? `<div style="margin-top:4px;"><strong>Notes:</strong> ${record.notes}</div>` : ''}
+                  </div>
+                  
+                  <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px; flex-wrap:wrap;">
+                    <button class="gos-btn gos-btn-secondary btn-sm" style="min-height:36px; padding:4px 10px;" onclick="event.stopPropagation(); app.openMessageForRecord('linkedin', '${record.leadId}')">✉️ Message</button>
+                    <button class="gos-btn gos-btn-secondary btn-sm" style="min-height:36px; padding:4px 10px;" onclick="event.stopPropagation(); navigator.clipboard.writeText('${record.email || ''}\\n${record.mobile || ''}').then(() => app.showToast('📋 Copied contact details', 'success'))">📋 Copy</button>
+                    <button class="gos-btn gos-btn-secondary btn-sm" style="min-height:36px; padding:4px 10px;" onclick="event.stopPropagation(); app.openRecordPanel('linkedin', '${record.leadId}'); setTimeout(() => app.editSelectedRecord(), 100)">✏️ Edit</button>
+                    ${briefcaseBtn}
+                    <button class="gos-btn gos-btn-primary btn-sm" style="min-height:36px; padding:4px 10px;" onclick="event.stopPropagation(); app.openRecordPanel('linkedin', '${record.leadId}')">⋯ More</button>
+                  </div>
+                </div>
+              </div>
+            `;
+          }
+
+          const mainTitle = record.contactName || record.title || record.customerName || 'No Name';
+          const secondary = record.company || record.orgName || record.contentPillar || record.itemsSummary || '';
+          const stageBadge = record.stage ? this.renderBadge(record.stage) : (record.status ? this.renderBadge(record.status) : '');
+          
+          let quickEditFields = '';
+          if (viewType === 'prime') {
+            const stages = ['New Inquiry', 'Qualified', 'Discovery', 'Proposal Sent', 'Negotiation', 'Won', 'Lost', 'Handoff', 'Closed Won', 'Closed Lost'];
+            quickEditFields = `
+              <div class="gos-form-row" style="margin-top:12px; gap:8px;">
+                <div class="gos-form-group" style="margin-bottom:0; flex:1;">
+                  <label class="gos-form-label" style="font-size:10px;">Stage</label>
+                  <select class="gos-form-select" style="padding:6px; font-size:12px;" onchange="app.saveInlineEdit('prime', '${record.opportunityId}', 'stage', this.value, this)">
+                    ${stages.map(s => `<option value="${s}" ${record.stage === s ? 'selected' : ''}>${s}</option>`).join('')}
+                  </select>
+                </div>
+                <div class="gos-form-group" style="margin-bottom:0; flex:1;">
+                  <label class="gos-form-label" style="font-size:10px;">Value (₱)</label>
+                  <input class="gos-form-input" type="number" style="padding:6px; font-size:12px;" value="${record.estimatedValue || 0}" onblur="app.saveInlineEdit('prime', '${record.opportunityId}', 'estimatedValue', this.value, this)">
+                </div>
+              </div>
+            `;
+          }
+
+          return `
+            <div class="gos-mobile-card" onclick="app.toggleMobileCardExpansion(this)">
+              <div class="gos-mobile-card-header">
+                <div class="gos-mobile-card-title">${mainTitle}</div>
+                <div>${stageBadge}</div>
+              </div>
+              <div class="gos-mobile-card-summary">
+                ${secondary ? `<div class="gos-mobile-card-action-text">${secondary}</div>` : ''}
+                ${record.priority ? `<div>·</div><div>${this.renderBadge(record.priority)}</div>` : ''}
+                ${record.nextActionDate ? `<div>·</div><div>📅 ${record.nextActionDate}</div>` : ''}
+              </div>
+              
+              <div class="gos-mobile-card-expandable" style="margin-top:12px; border-top:1px solid var(--border); padding-top:12px; display:none;">
+                <div style="font-size:12px; color:var(--text-secondary); line-height:1.6;">
+                  ${record.role ? `<div><strong>Role:</strong> ${record.role}</div>` : ''}
+                  ${record.email ? `<div><strong>Email:</strong> ${record.email}</div>` : ''}
+                  ${record.mobile ? `<div><strong>Phone:</strong> ${record.mobile}</div>` : ''}
+                  ${record.status ? `<div><strong>Status:</strong> ${record.status}</div>` : ''}
+                  ${record.interestSignal ? `<div style="margin-top:4px;"><strong>Interest:</strong> ${record.interestSignal}</div>` : ''}
+                  ${record.notes ? `<div style="margin-top:4px;"><strong>Notes:</strong> ${record.notes}</div>` : ''}
+                </div>
+                
+                ${quickEditFields}
+                
+                <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;">
+                  <button class="gos-btn gos-btn-secondary btn-sm" style="min-height:36px; padding:4px 10px;" onclick="event.stopPropagation(); app.openMessageForRecord('${viewType}', '${record[idKey]}')">✉️ Message</button>
+                  <button class="gos-btn gos-btn-primary btn-sm" style="min-height:36px; padding:4px 10px;" onclick="event.stopPropagation(); app.openRecordPanel('${viewType}', '${record[idKey]}')">⋯ Details</button>
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+
     return `
       <div class="gos-table-container">
         <div class="gos-table-header">
           <span class="gos-table-title">${tableTitle}</span>
           <span class="gos-table-count">${data.length} records</span>
         </div>
-        <div class="gos-table-wrap">
-          <table class="gos-table">
-            <thead>
-              <tr>
-                ${columns.map(col => `
-                  <th onclick="app.toggleSort('${col.key}')" class="${this.sortConfig.key === col.key ? 'sorted' : ''}">
-                    ${col.label}
-                    <span class="sort-icon">${this.sortConfig.key === col.key ? (this.sortConfig.direction === 'asc' ? '↑' : '↓') : '↕'}</span>
-                  </th>
-                `).join('')}
-                <th style="width:40px"></th>
-              </tr>
-            </thead>
-            <tbody>
-              ${data.map(record => `
-                <tr class="clickable" onclick="app.openRecordPanel('${viewType}', '${record[idKey]}')">
-                  ${columns.map(col => `
-                    <td>${col.render ? col.render(record[col.key], record) : (record[col.key] || '—')}</td>
-                  `).join('')}
-                  <td>
-                    <button class="gos-btn gos-btn-ghost gos-btn-sm" onclick="event.stopPropagation(); app.openMessageForRecord('${viewType}', '${record[idKey]}')" title="Generate message">✉️</button>
-                  </td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
+        ${desktopTable}
+        ${mobileCards}
       </div>
     `;
   }
@@ -1348,6 +1521,337 @@ class GeloGrowthOS {
   }
 
   // ── Inline Edit Flow ─────────────────────────────────────────
+  _setLeadsTab(tab) {
+    this._leadsTab = tab;
+    this.renderContent();
+  }
+
+  toggleMobileCardExpansion(cardElement) {
+    cardElement.classList.toggle('expanded');
+    const expandable = cardElement.querySelector('.gos-mobile-card-expandable');
+    if (expandable) {
+      expandable.style.display = cardElement.classList.contains('expanded') ? 'block' : 'none';
+    }
+  }
+
+  startInlineEdit(element, viewType, recordId, fieldKey, fieldType, options = null) {
+    if (element.querySelector('input') || element.querySelector('select')) return;
+
+    const originalValue = element.textContent.trim();
+    element.dataset.original = originalValue;
+    element.innerHTML = '';
+
+    let input;
+    if (fieldType === 'select') {
+      input = document.createElement('select');
+      input.className = 'gos-form-select inline-select';
+      input.style.padding = '4px 8px';
+      input.style.fontSize = '12px';
+      input.style.minHeight = '30px';
+      const opts = options || [];
+      
+      // If nextAction custom value, prepend it
+      if (fieldKey === 'nextAction' && !opts.includes(originalValue) && originalValue !== '—' && originalValue !== '') {
+        const option = document.createElement('option');
+        option.value = originalValue;
+        option.textContent = originalValue;
+        option.selected = true;
+        input.appendChild(option);
+      }
+      
+      opts.forEach(opt => {
+        const option = document.createElement('option');
+        option.value = opt;
+        option.textContent = opt;
+        if (opt === originalValue && !input.querySelector(`option[value="${CSS.escape(opt)}"]`)) option.selected = true;
+        if (!input.querySelector(`option[value="${CSS.escape(opt)}"]`)) {
+          input.appendChild(option);
+        }
+      });
+      
+      if (fieldKey === 'nextAction') {
+        input.addEventListener('change', () => {
+          if (input.value === 'Custom') {
+            const textInput = document.createElement('input');
+            textInput.type = 'text';
+            textInput.className = 'gos-form-input inline-input';
+            textInput.style.padding = '4px 8px';
+            textInput.style.fontSize = '12px';
+            textInput.style.minHeight = '30px';
+            textInput.value = (originalValue === '—' || originalValue === 'Custom') ? '' : originalValue;
+
+            element.innerHTML = '';
+            element.appendChild(textInput);
+            textInput.focus();
+
+            const saveCustomValue = () => {
+              const newValue = textInput.value.trim();
+              this.saveInlineEdit(viewType, recordId, fieldKey, newValue, element);
+            };
+            const discardCustomChanges = () => {
+              element.innerHTML = originalValue;
+            };
+
+            textInput.addEventListener('blur', saveCustomValue);
+            textInput.addEventListener('keydown', (e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                textInput.removeEventListener('blur', saveCustomValue);
+                saveCustomValue();
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                textInput.removeEventListener('blur', saveCustomValue);
+                discardCustomChanges();
+              }
+            });
+          }
+        });
+      }
+    } else {
+      input = document.createElement('input');
+      input.className = 'gos-form-input inline-input';
+      input.style.padding = '4px 8px';
+      input.style.fontSize = '12px';
+      input.style.minHeight = '30px';
+      if (fieldType === 'number') {
+        input.type = 'number';
+      } else if (fieldType === 'date') {
+        input.type = 'date';
+      } else if (fieldType === 'time') {
+        input.type = 'time';
+      } else {
+        input.type = 'text';
+      }
+      input.value = originalValue === '—' ? '' : originalValue;
+    }
+
+    element.appendChild(input);
+    input.focus();
+
+    const saveValue = () => {
+      const newValue = input.value.trim();
+      this.saveInlineEdit(viewType, recordId, fieldKey, newValue, element);
+    };
+
+    const discardChanges = () => {
+      element.innerHTML = originalValue;
+    };
+
+    input.addEventListener('blur', saveValue);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        input.removeEventListener('blur', saveValue);
+        saveValue();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        input.removeEventListener('blur', saveValue);
+        discardChanges();
+      }
+    });
+  }
+
+  async saveInlineEdit(viewType, recordId, fieldKey, newValue, element) {
+    const dataMap = {
+      'linkedin': { data: this.data.linkedinLeads, idKey: 'leadId', tabKey: 'linkedinLeads' },
+      'prime': { data: this.data.primePipeline, idKey: 'opportunityId', tabKey: 'primePipeline' },
+    };
+
+    const config = dataMap[viewType];
+    if (!config) return;
+
+    const record = config.data.find(r => r[config.idKey] === recordId);
+    if (!record) return;
+
+    const originalValue = record[fieldKey];
+    const numberFields = new Set([
+      'qualificationScore', 'estimatedValue', 'probabilityPercent', 'weightedValue',
+      'orderAmount', 'views', 'comments', 'saves', 'replies', 'engagements', 'leadsGenerated',
+    ]);
+    const parsedValue = numberFields.has(fieldKey) ? (parseFloat(newValue) || 0) : newValue;
+
+    if (parsedValue === originalValue) {
+      this.renderContent();
+      return;
+    }
+
+    record[fieldKey] = parsedValue;
+
+    if (viewType === 'linkedin') {
+      const today = getDemoToday();
+      if (fieldKey === 'contactName') {
+        const oldContactId = record.contactId;
+        const contact = this.data.contacts.find(c => c.contactId === oldContactId);
+        if (contact) {
+          contact.contactId = parsedValue;
+          contact.fullName = parsedValue;
+          contact.updatedAt = today;
+          try {
+            await sheetsService.updateRecord('contacts', contact._rowIndex, contact);
+          } catch(err) {
+            console.error('Failed to sync contact name change', err);
+          }
+        }
+        record.contactId = parsedValue;
+      }
+      
+      if (fieldKey === 'company') {
+        const contact = this.data.contacts.find(c => c.contactId === record.contactId);
+        if (contact) {
+          if (!contact.organizationId) {
+            contact.organizationId = `ORG-${String((this.data.organizations || []).length + 1).padStart(4, '0')}`;
+          }
+          let org = this.data.organizations.find(o => o.organizationId === contact.organizationId);
+          if (!org) {
+            org = {
+              organizationId: contact.organizationId,
+              organizationName: parsedValue,
+              industry: '', website: '', source: 'LinkedIn', accountStatus: 'Active',
+              ownerId: 'Gelo', createdAt: today, updatedAt: today, notes: ''
+            };
+            this.data.organizations.push(org);
+            try {
+              await sheetsService.appendRecord('organizations', org);
+            } catch(err) {
+              console.error('Failed to sync new org', err);
+            }
+          } else {
+            org.organizationName = parsedValue;
+            org.updatedAt = today;
+            try {
+              await sheetsService.updateRecord('organizations', org._rowIndex, org);
+            } catch(err) {
+              console.error('Failed to sync org name change', err);
+            }
+          }
+        }
+      }
+
+      if (['mobile', 'email', 'status'].includes(fieldKey)) {
+        const contact = this.data.contacts.find(c => c.contactId === record.contactId);
+        if (contact) {
+          contact[fieldKey] = parsedValue;
+          contact.updatedAt = today;
+          try {
+            await sheetsService.updateRecord('contacts', contact._rowIndex, contact);
+          } catch(err) {
+            console.error(`Failed to sync contact ${fieldKey} change`, err);
+          }
+        }
+      }
+    }
+
+    if (viewType === 'prime') {
+      const today = getDemoToday();
+      if (fieldKey === 'estimatedValue' || fieldKey === 'probabilityPercent') {
+        const val = parseFloat(record.estimatedValue) || 0;
+        const prob = parseFloat(record.probabilityPercent) || 0;
+        record.weightedValue = Math.round(val * prob / 100);
+      }
+
+      if (fieldKey === 'contactName') {
+        const contact = this.data.contacts.find(c => c.contactId === record.contactId);
+        if (contact) {
+          contact.fullName = parsedValue;
+          contact.updatedAt = today;
+          try {
+            await sheetsService.updateRecord('contacts', contact._rowIndex, contact);
+          } catch(err) {
+            console.error('Failed to sync contact name change', err);
+          }
+        }
+      }
+    }
+
+    this.showToast('⚡ Saving changes...', 'info');
+    this.renderContent();
+
+    try {
+      await sheetsService.updateRecord(config.tabKey, record._rowIndex, record);
+      this.showToast('✅ Saved to Google Sheets', 'success');
+    } catch (err) {
+      this.showToast('⚠️ Sync failed. Saved locally only.', 'warning');
+      console.error(err);
+    }
+  }
+
+  async convertLeadToPipeline(leadId) {
+    const lead = this.data.linkedinLeads.find(l => l.leadId === leadId);
+    if (!lead) return;
+
+    const alreadyConverted = lead.convertedToPipeline === 'Yes' || this.data.primePipeline.some(p => String(p.sourceLeadId) === String(leadId));
+    if (alreadyConverted) {
+      this.showToast('Lead already converted to opportunity', 'warning');
+      return;
+    }
+
+    const today = getDemoToday();
+    const opps = this.data.primePipeline || [];
+    let maxNum = 0;
+    opps.forEach(o => {
+      const match = String(o.opportunityId).match(/^(OPP|PO)-(\d+)$/);
+      if (match) {
+        const num = parseInt(match[2]);
+        if (num > maxNum) maxNum = num;
+      }
+    });
+    const oppId = `OPP-${String(maxNum + 1).padStart(4, '0')}`;
+
+    const newOpportunity = {
+      opportunityId: oppId,
+      sourceLeadId: leadId,
+      contactName: lead.contactName || lead.contactId || '',
+      contactId: lead.contactId || '',
+      orgName: lead.company || '',
+      organizationId: lead.organizationId || '',
+      serviceInterest: lead.interestSignal || 'Services Inquiry',
+      problemStatement: lead.notes || '',
+      stage: 'Discovery',
+      dealStatus: 'Open',
+      paymentStatus: 'Unpaid',
+      estimatedValue: lead.projectedCloseAmount || 0,
+      probabilityPercent: 20,
+      weightedValue: Math.round((lead.projectedCloseAmount || 0) * 0.2),
+      budgetRange: '',
+      decisionMaker: lead.contactName || lead.contactId || '',
+      timeline: '',
+      discoveryDate: today,
+      proposalDate: '',
+      nextAction: lead.nextAction || 'Schedule Discovery Call',
+      nextActionDate: lead.nextActionDate || '',
+      closeDate: '',
+      outcomeReason: '',
+      ownerId: 'Gelo',
+      notes: lead.notes || '',
+      mobile: lead.mobile || '',
+      email: lead.email || '',
+      source: lead.source || '',
+      profileUrl: lead.linkedinUrl || '',
+    };
+
+    this.data.primePipeline.push(newOpportunity);
+
+    lead.convertedToPipeline = 'Yes';
+    lead.pipelineOpportunityId = oppId;
+    lead.convertedOpportunityId = oppId;
+    lead.pipelineStage = 'Discovery';
+    lead.dealStatus = 'Open';
+    lead.paymentStatus = 'Unpaid';
+    lead.stage = 'Converted';
+
+    this.showToast('🚀 Converting lead to pipeline opportunity...', 'info');
+    this.renderContent();
+
+    try {
+      await sheetsService.appendRecord('primePipeline', newOpportunity);
+      await sheetsService.updateRecord('linkedinLeads', lead._rowIndex, lead);
+      this.showToast('✅ Lead converted and synced successfully!', 'success');
+    } catch(err) {
+      console.error(err);
+      this.showToast('⚠️ Conversion saved locally, but sheet sync failed.', 'warning');
+    }
+  }
+
   editSelectedRecord() {
     if (!this.selectedRecord) return;
     const { viewType, record } = this.selectedRecord;
@@ -1738,7 +2242,7 @@ class GeloGrowthOS {
               </div>
               
               <div class="gos-form-group">
-                <label class="gos-form-label">Company</label>
+                <label class="gos-form-label">Company / Brand</label>
                 <input class="gos-form-input" name="company" value="${r.company || ''}">
               </div>
               
@@ -1749,9 +2253,35 @@ class GeloGrowthOS {
 
               <div class="gos-form-row">
                 <div class="gos-form-group">
+                  <label class="gos-form-label">Phone Number</label>
+                  <input class="gos-form-input" name="mobile" value="${r.mobile || ''}" placeholder="e.g. +63 917 ...">
+                </div>
+                <div class="gos-form-group">
+                  <label class="gos-form-label">Email Address</label>
+                  <input class="gos-form-input" type="email" name="email" value="${r.email || ''}" placeholder="e.g. client@example.com">
+                </div>
+              </div>
+
+              <div class="gos-form-row">
+                <div class="gos-form-group">
+                  <label class="gos-form-label">Source</label>
+                  <select class="gos-form-select" name="source">
+                    ${['LinkedIn', 'Facebook', 'Instagram', 'Network', 'Referral', 'Website', 'Other'].map(opt => `
+                      <option value="${opt}" ${r.source === opt ? 'selected' : ''}>${opt}</option>
+                    `).join('')}
+                  </select>
+                </div>
+                <div class="gos-form-group">
+                  <label class="gos-form-label">Profile / URL</label>
+                  <input class="gos-form-input" name="linkedinUrl" value="${r.linkedinUrl || ''}">
+                </div>
+              </div>
+
+              <div class="gos-form-row">
+                <div class="gos-form-group">
                   <label class="gos-form-label">Stage</label>
                   <select class="gos-form-select" name="stage">
-                    ${['New', 'Qualified', 'Contacted', 'Nurturing', 'Converted', 'Recycle', 'Closed'].map(opt => `
+                    ${['New', 'Contacted', 'Qualified', 'Proposal', 'Closed Won', 'Closed Lost', 'Not Fit', 'Connection Sent', 'Connected', 'Thank You Sent', 'Follow-up Due', 'Replied', 'Call Booked', 'Call Done'].map(opt => `
                       <option value="${opt}" ${r.stage === opt ? 'selected' : ''}>${opt}</option>
                     `).join('')}
                   </select>
@@ -1759,26 +2289,33 @@ class GeloGrowthOS {
                 <div class="gos-form-group">
                   <label class="gos-form-label">Priority</label>
                   <select class="gos-form-select" name="priority">
-                    ${['Normal', 'High', 'Critical', 'Low'].map(opt => `
+                    ${['Low', 'Normal', 'High', 'Urgent', 'Critical'].map(opt => `
                       <option value="${opt}" ${r.priority === opt ? 'selected' : ''}>${opt}</option>
                     `).join('')}
                   </select>
                 </div>
               </div>
 
-              <div class="gos-form-group">
-                <label class="gos-form-label">Score (0-100)</label>
-                <input class="gos-form-input" type="number" name="qualificationScore" min="0" max="100" value="${r.qualificationScore || 0}">
+              <div class="gos-form-row">
+                <div class="gos-form-group">
+                  <label class="gos-form-label">Score (1-100)</label>
+                  <input class="gos-form-input" type="number" name="qualificationScore" min="1" max="100" value="${r.qualificationScore || 50}">
+                </div>
+                <div class="gos-form-group">
+                  <label class="gos-form-label">Projected Close Amount (₱)</label>
+                  <input class="gos-form-input" type="number" name="projectedCloseAmount" value="${r.projectedCloseAmount || 0}">
+                </div>
               </div>
 
-              <div class="gos-form-group">
-                <label class="gos-form-label">Next Action</label>
-                <input class="gos-form-input" name="nextAction" value="${r.nextAction || ''}">
-              </div>
-
-              <div class="gos-form-group">
-                <label class="gos-form-label">Follow-up Date</label>
-                <input class="gos-form-input" type="date" name="nextActionDate" value="${r.nextActionDate || ''}">
+              <div class="gos-form-row">
+                <div class="gos-form-group">
+                  <label class="gos-form-label">Next Action</label>
+                  <input class="gos-form-input" name="nextAction" value="${r.nextAction || ''}">
+                </div>
+                <div class="gos-form-group">
+                  <label class="gos-form-label">Follow-up Date</label>
+                  <input class="gos-form-input" type="date" name="nextActionDate" value="${r.nextActionDate || ''}">
+                </div>
               </div>
 
               <div class="gos-form-group">
@@ -1809,11 +2346,30 @@ class GeloGrowthOS {
                 <input class="gos-form-input" name="serviceInterest" value="${r.serviceInterest || ''}" required>
               </div>
 
+              <div class="gos-form-row">
+                <div class="gos-form-group">
+                  <label class="gos-form-label">Stage</label>
+                  <select class="gos-form-select" name="stage">
+                    ${['Inquiry', 'Discovery', 'Proposal', 'Negotiation', 'Closed Won', 'Closed Lost'].map(opt => `
+                      <option value="${opt}" ${r.stage === opt ? 'selected' : ''}>${opt}</option>
+                    `).join('')}
+                  </select>
+                </div>
+                <div class="gos-form-group">
+                  <label class="gos-form-label">Deal Status</label>
+                  <select class="gos-form-select" name="dealStatus">
+                    ${['Open', 'In Progress', 'Won', 'Lost', 'Paid'].map(opt => `
+                      <option value="${opt}" ${r.dealStatus === opt ? 'selected' : ''}>${opt}</option>
+                    `).join('')}
+                  </select>
+                </div>
+              </div>
+
               <div class="gos-form-group">
-                <label class="gos-form-label">Stage</label>
-                <select class="gos-form-select" name="stage">
-                  ${['New Inquiry', 'Qualified', 'Discovery', 'Proposal Sent', 'Negotiation', 'Won', 'Lost', 'Handoff'].map(opt => `
-                    <option value="${opt}" ${r.stage === opt ? 'selected' : ''}>${opt}</option>
+                <label class="gos-form-label">Payment Status</label>
+                <select class="gos-form-select" name="paymentStatus">
+                  ${['Unpaid', 'Partial', 'Paid', 'Refunded', 'Cancelled'].map(opt => `
+                    <option value="${opt}" ${r.paymentStatus === opt ? 'selected' : ''}>${opt}</option>
                   `).join('')}
                 </select>
               </div>
@@ -1992,7 +2548,7 @@ class GeloGrowthOS {
 
   getRecordTitle(viewType, record) {
     switch (viewType) {
-      case 'linkedin': return `${record.contactName} — LinkedIn Lead`;
+      case 'linkedin': return `${record.contactName} — Lead`;
       case 'prime': return `${record.orgName} — ${record.serviceInterest}`;
       case 'scc': return record.title;
       case 'calmera': return `${record.customerName} — ${record.externalOrderRef}`;
@@ -2018,17 +2574,23 @@ class GeloGrowthOS {
       <div class="gos-panel-section">
         <div class="gos-panel-section-title">Lead Information</div>
         ${this.renderField('Name', r.contactName)}
-        ${this.renderField('Company', r.company)}
+        ${this.renderField('Company / Brand', r.company)}
         ${this.renderField('Role', r.role)}
         ${this.renderField('Stage', this.renderBadge(r.stage))}
         ${this.renderField('Priority', this.renderBadge(r.priority))}
         ${this.renderField('Score', this.renderScore(r.qualificationScore))}
         ${this.renderField('Source', r.source)}
-        ${this.renderField('Connection', r.connectionStatus)}
+        ${this.renderField('Profile / URL', r.linkedinUrl ? `<a href="${r.linkedinUrl.startsWith('http') ? r.linkedinUrl : 'https://' + r.linkedinUrl}" target="_blank" class="gos-link" onclick="event.stopPropagation()">${r.linkedinUrl}</a>` : '—')}
       </div>
       <div class="gos-panel-section">
-        <div class="gos-panel-section-title">Interest & Qualification</div>
-        ${this.renderField('Interest Signal', r.interestSignal)}
+        <div class="gos-panel-section-title">Contact Details</div>
+        ${this.renderField('Phone Number', r.mobile || '—')}
+        ${this.renderField('Email Address', r.email || '—')}
+      </div>
+      <div class="gos-panel-section">
+        <div class="gos-panel-section-title">Commercial</div>
+        ${this.renderField('Projected Close Amount', `₱${(r.projectedCloseAmount || 0).toLocaleString()}`)}
+        ${r.pipelineOpportunityId ? this.renderField('Pipeline Deal', `<a class="cell-link clickable" onclick="app.openRecordPanel('prime', '${r.pipelineOpportunityId}')">${r.pipelineOpportunityId}</a>`) : ''}
         ${this.renderField('Notes', r.notes)}
       </div>
       <div class="gos-panel-section">
@@ -2036,7 +2598,6 @@ class GeloGrowthOS {
         ${this.renderField('Next Action', r.nextAction)}
         ${this.renderField('Follow-up Date', this.renderDueDate(r.nextActionDate))}
         ${this.renderField('Last Interaction', r.lastInteractionAt || '—')}
-        ${r.convertedOpportunityId ? this.renderField('Converted To', `<a class="cell-link" onclick="app.openRecordPanel('prime', '${r.convertedOpportunityId}')">${r.convertedOpportunityId}</a>`) : ''}
       </div>
       ${interactions.length > 0 ? `
         <div class="gos-panel-section">
@@ -2062,6 +2623,8 @@ class GeloGrowthOS {
         ${this.renderField('Organization', r.orgName)}
         ${this.renderField('Service', r.serviceInterest)}
         ${this.renderField('Stage', this.renderBadge(r.stage))}
+        ${this.renderField('Deal Status', this.renderBadge(r.dealStatus || 'Open'))}
+        ${this.renderField('Payment Status', this.renderBadge(r.paymentStatus || 'Unpaid'))}
         ${this.renderField('Problem', r.problemStatement)}
       </div>
       <div class="gos-panel-section">
@@ -2236,25 +2799,56 @@ class GeloGrowthOS {
       case 'linkedin': return `
         <div class="gos-form-row">
           <div class="gos-form-group"><label class="gos-form-label">Full Name *</label><input class="gos-form-input" name="contactName" required></div>
-          <div class="gos-form-group"><label class="gos-form-label">Company</label><input class="gos-form-input" name="company"></div>
+          <div class="gos-form-group"><label class="gos-form-label">Company / Brand</label><input class="gos-form-input" name="company"></div>
         </div>
         <div class="gos-form-row">
-          <div class="gos-form-group"><label class="gos-form-label">Role</label><input class="gos-form-input" name="role"></div>
-          <div class="gos-form-group"><label class="gos-form-label">LinkedIn URL</label><input class="gos-form-input" name="linkedinUrl"></div>
+          <div class="gos-form-group"><label class="gos-form-label">Phone Number</label><input class="gos-form-input" name="mobile" placeholder="e.g. +63 917 ..."></div>
+          <div class="gos-form-group"><label class="gos-form-label">Email Address</label><input class="gos-form-input" type="email" name="email" placeholder="e.g. client@example.com"></div>
         </div>
         <div class="gos-form-row">
           <div class="gos-form-group">
             <label class="gos-form-label">Source</label>
-            <select class="gos-form-select" name="source"><option>LinkedIn Search</option><option>LinkedIn Content</option><option>LinkedIn Event</option><option>Referral</option><option>Network</option><option>Other</option></select>
+            <select class="gos-form-select" name="source">
+              <option>LinkedIn</option>
+              <option>Facebook</option>
+              <option>Instagram</option>
+              <option>Network</option>
+              <option>Referral</option>
+              <option>Website</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div class="gos-form-group"><label class="gos-form-label">Profile / URL</label><input class="gos-form-input" name="linkedinUrl" placeholder="e.g. Profile or source link"></div>
+        </div>
+        <div class="gos-form-row">
+          <div class="gos-form-group">
+            <label class="gos-form-label">Stage</label>
+            <select class="gos-form-select" name="stage">
+              <option>New</option>
+              <option>Contacted</option>
+              <option>Qualified</option>
+              <option>Proposal</option>
+              <option>Closed Won</option>
+              <option>Closed Lost</option>
+              <option>Not Fit</option>
+            </select>
           </div>
           <div class="gos-form-group">
             <label class="gos-form-label">Priority</label>
-            <select class="gos-form-select" name="priority"><option>Normal</option><option>High</option><option>Critical</option><option>Low</option></select>
+            <select class="gos-form-select" name="priority">
+              <option>Normal</option>
+              <option>Low</option>
+              <option>High</option>
+              <option>Urgent</option>
+            </select>
           </div>
         </div>
-        <div class="gos-form-group"><label class="gos-form-label">Interest Signal</label><input class="gos-form-input" name="interestSignal" placeholder="What caught your attention about this lead?"></div>
         <div class="gos-form-row">
-          <div class="gos-form-group"><label class="gos-form-label">Next Action</label><input class="gos-form-input" name="nextAction" placeholder="e.g., Send connection request"></div>
+          <div class="gos-form-group"><label class="gos-form-label">Score (1-100)</label><input class="gos-form-input" type="number" name="qualificationScore" min="1" max="100" value="50"></div>
+          <div class="gos-form-group"><label class="gos-form-label">Projected Close Amount (₱)</label><input class="gos-form-input" type="number" name="projectedCloseAmount" placeholder="e.g. 30000"></div>
+        </div>
+        <div class="gos-form-row">
+          <div class="gos-form-group"><label class="gos-form-label">Next Action</label><input class="gos-form-input" name="nextAction" placeholder="e.g. Send first message"></div>
           <div class="gos-form-group"><label class="gos-form-label">Follow-up Date</label><input class="gos-form-input" name="nextActionDate" type="date"></div>
         </div>
         <div class="gos-form-group"><label class="gos-form-label">Notes</label><textarea class="gos-form-textarea" name="notes" rows="3"></textarea></div>
@@ -2339,15 +2933,15 @@ class GeloGrowthOS {
           newContact = {
             contactId,
             fullName: data.contactName,
-            email: '',
-            mobile: '',
+            email: data.email || '',
+            mobile: data.mobile || '',
             linkedinUrl: data.linkedinUrl || '',
             organizationId: '', // will be set below
             segments: ['LinkedIn Lead'],
             preferredChannel: 'LinkedIn',
             contactBasis: '',
             ownerId: 'Gelo',
-            status: 'Active',
+            status: data.status || 'Lead',
             createdAt: today,
             updatedAt: today,
             notes: data.notes || '',
@@ -2385,22 +2979,27 @@ class GeloGrowthOS {
         newRecord = {
           leadId: `LL-${String((this.data.linkedinLeads || []).length + 1).padStart(4, '0')}`,
           contactId: contactId,
+          contactName: data.contactName,
           linkedinUrl: data.linkedinUrl || '',
-          source: data.source || 'LinkedIn Search',
+          source: data.source || 'LinkedIn',
           dateCaptured: today,
           connectionStatus: 'Pending',
           role: data.role || '',
           organizationId: orgId,
           interestSignal: data.interestSignal || '',
-          qualificationScore: this.calculateLeadScore(data),
+          qualificationScore: parseFloat(data.qualificationScore) || 50,
           priority: data.priority || 'Normal',
-          stage: 'New',
+          stage: data.stage || 'New',
           lastInteractionAt: '',
           nextAction: data.nextAction || '',
           nextActionDate: data.nextActionDate || '',
           convertedOpportunityId: '',
           ownerId: 'Gelo',
           notes: data.notes || '',
+          email: data.email || '',
+          mobile: data.mobile || '',
+          company: data.company || '',
+          projectedCloseAmount: parseFloat(data.projectedCloseAmount) || 0,
         };
         this.data.linkedinLeads.push(newRecord);
         break;
@@ -4012,23 +4611,29 @@ class GeloGrowthOS {
               </div>
             </div>
             <div class="settings-card-body">
-              ${settings.modules.map((mod, idx) => `
-                <div class="module-item">
-                  <div class="module-item-icon">${mod.icon}</div>
-                  <div class="module-item-info">
-                    <div class="module-item-name">${this._esc(mod.label)}</div>
-                    ${mod.sheetTab ? `<div class="module-item-sheet">📊 ${mod.sheetTab}</div>` : '<div class="module-item-sheet text-muted">No sheet tab</div>'}
+              ${settings.modules.map((mod, idx) => {
+                const isCustom = ['leads', 'brandCommunity', 'productsOrders'].includes(mod.id);
+                return `
+                  <div class="module-item" style="${isCustom ? '' : 'opacity:0.85;'}">
+                    <div class="module-item-icon" style="color:var(--primary);">${getIconSvg(MODULE_ICON_MAP[mod.id] || 'info', 20)}</div>
+                    <div class="module-item-info">
+                      <div class="module-item-name" style="display:flex;align-items:center;gap:8px;">
+                        ${this._esc(mod.label)}
+                        ${isCustom ? '' : '<span class="fixed-badge">Fixed</span>'}
+                      </div>
+                      ${mod.sheetTab ? `<div class="module-item-sheet">📊 ${mod.sheetTab}</div>` : '<div class="module-item-sheet text-muted">No sheet tab</div>'}
+                    </div>
+                    <div class="module-item-actions">
+                      <input class="module-rename-input" id="mod-label-${idx}" value="${this._esc(mod.label)}" placeholder="Module name" ${isCustom ? '' : 'disabled'}>
+                      ${mod.sheetTab ? `<input class="module-rename-input" id="mod-tab-${idx}" value="${this._esc(mod.sheetTab)}" placeholder="Sheet tab name" style="width:120px" ${isCustom ? '' : 'disabled'}>` : ''}
+                      <label class="toggle-switch" title="Show/hide this module">
+                        <input type="checkbox" ${mod.visible ? 'checked' : ''} onchange="app._toggleModuleVisible(${idx}, this.checked)">
+                        <span class="toggle-slider"></span>
+                      </label>
+                    </div>
                   </div>
-                  <div class="module-item-actions">
-                    <input class="module-rename-input" id="mod-label-${idx}" value="${this._esc(mod.label)}" placeholder="Module name">
-                    ${mod.sheetTab ? `<input class="module-rename-input" id="mod-tab-${idx}" value="${this._esc(mod.sheetTab)}" placeholder="Sheet tab name" style="width:120px">` : ''}
-                    <label class="toggle-switch" title="Show/hide this module">
-                      <input type="checkbox" ${mod.visible ? 'checked' : ''} onchange="app._toggleModuleVisible(${idx}, this.checked)">
-                      <span class="toggle-slider"></span>
-                    </label>
-                  </div>
-                </div>
-              `).join('')}
+                `;
+              }).join('')}
               <div style="margin-top:16px">
                 <button class="btn-primary" onclick="app._saveModuleSettings()">Save Module Names</button>
               </div>
@@ -4085,12 +4690,18 @@ class GeloGrowthOS {
                 ${this.sheetsConnected ? '<button class="btn-danger btn-sm" onclick="app.disconnectSheets()">Disconnect</button>' : ''}
               </div>
               <div class="gos-form-label" style="margin-bottom:12px">Sheet Tab Mappings</div>
-              ${Object.entries(settings.sheets.tabMappings).map(([modId, tabName]) => `
-                <div class="sheet-mapping-row">
-                  <div class="sheet-mapping-label">${settingsEngine.getModuleLabel(modId) || modId}</div>
-                  <input class="gos-form-input" id="tab-${modId}" value="${this._esc(tabName)}" placeholder="Tab name in Google Sheets">
-                </div>
-              `).join('')}
+              ${Object.entries(settings.sheets.tabMappings).map(([modId, tabName]) => {
+                const isCustom = ['leads', 'brandCommunity', 'productsOrders'].includes(modId);
+                return `
+                  <div class="sheet-mapping-row" style="margin-bottom:12px;${isCustom ? '' : 'opacity:0.85;'}">
+                    <div class="sheet-mapping-label" style="display:flex;align-items:center;gap:8px;font-weight:600;min-width:180px;">
+                      ${settingsEngine.getModuleLabel(modId) || modId}
+                      ${isCustom ? '' : '<span class="fixed-badge">Fixed</span>'}
+                    </div>
+                    <input class="gos-form-input" id="tab-${modId}" value="${this._esc(tabName)}" placeholder="Tab name in Google Sheets" ${isCustom ? '' : 'disabled'}>
+                  </div>
+                `;
+              }).join('')}
               <button class="btn-secondary" style="margin-top:12px" onclick="app._saveTabMappings()">Save Tab Names</button>
             </div>
           </div>
@@ -4163,11 +4774,19 @@ class GeloGrowthOS {
 
   _saveModuleSettings() {
     const settings = settingsEngine.get();
+    const customizableIds = ['leads', 'brandCommunity', 'productsOrders'];
     settings.modules.forEach((mod, idx) => {
+      if (!customizableIds.includes(mod.id)) return;
       const labelEl = document.getElementById(`mod-label-${idx}`);
       const tabEl   = document.getElementById(`mod-tab-${idx}`);
       if (labelEl && labelEl.value.trim()) mod.label = labelEl.value.trim();
-      if (tabEl   && tabEl.value.trim())   mod.sheetTab = tabEl.value.trim();
+      if (tabEl   && tabEl.value.trim()) {
+        const newTab = tabEl.value.trim();
+        mod.sheetTab = newTab;
+        if (settings.sheets.tabMappings[mod.id] !== undefined) {
+          settings.sheets.tabMappings[mod.id] = newTab;
+        }
+      }
     });
     settingsEngine.save(settings);
     this.buildNavigation();
@@ -4233,9 +4852,18 @@ class GeloGrowthOS {
 
   _saveTabMappings() {
     const settings = settingsEngine.get();
+    const customizableIds = ['leads', 'brandCommunity', 'productsOrders'];
     Object.keys(settings.sheets.tabMappings).forEach(modId => {
+      if (!customizableIds.includes(modId)) return;
       const el = document.getElementById(`tab-${modId}`);
-      if (el && el.value.trim()) settings.sheets.tabMappings[modId] = el.value.trim();
+      if (el && el.value.trim()) {
+        const newTab = el.value.trim();
+        settings.sheets.tabMappings[modId] = newTab;
+        const mod = settings.modules.find(m => m.id === modId);
+        if (mod) {
+          mod.sheetTab = newTab;
+        }
+      }
     });
     settingsEngine.save(settings);
     this.showToast('Tab mappings saved!', 'success');

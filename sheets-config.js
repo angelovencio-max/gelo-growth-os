@@ -83,11 +83,47 @@ const COLUMN_MAP = {
   task_id: 'taskId', task_type: 'taskType',
   due_at: 'dueAt', assigned_to: 'assignedTo',
   completed_at: 'completedAt', generated_by_rule_id: 'generatedByRuleId',
+
+  // Leads & Pipeline Extensions
+  converted_to_pipeline: 'convertedToPipeline',
+  pipeline_opportunity_id: 'pipelineOpportunityId',
+  deal_status: 'dealStatus',
+  payment_status: 'paymentStatus',
+  pipeline_stage: 'pipelineStage',
+  deal_value: 'estimatedValue',
+  category: 'category',
+  source: 'source',
+  follow_up_time: 'followUpTime',
+  name: 'contactName',
+  lead_score: 'qualificationScore',
+  company_brand: 'company',
+  phone_number: 'mobile',
+  email_address: 'email',
+  profile_url: 'linkedinUrl',
+  follow_up_date: 'nextActionDate',
+  projected_close_amount: 'projectedCloseAmount',
+  score: 'qualificationScore',
 };
 
 // Reverse map (camelCase → snake_case)
 const REVERSE_COLUMN_MAP = {};
 Object.entries(COLUMN_MAP).forEach(([snake, camel]) => {
+  if (!REVERSE_COLUMN_MAP[camel]) {
+    REVERSE_COLUMN_MAP[camel] = snake;
+  }
+});
+// Explicitly prioritize standard mapping names when writing back to Sheets
+const PRIORITY_REVERSE = {
+  estimatedValue: 'estimated_value',
+  stage: 'stage',
+  pipelineOpportunityId: 'pipeline_opportunity_id',
+  convertedToPipeline: 'converted_to_pipeline',
+  dealStatus: 'deal_status',
+  paymentStatus: 'payment_status',
+  contactName: 'full_name',
+  company: 'company',
+};
+Object.entries(PRIORITY_REVERSE).forEach(([camel, snake]) => {
   REVERSE_COLUMN_MAP[camel] = snake;
 });
 
@@ -95,6 +131,7 @@ Object.entries(COLUMN_MAP).forEach(([snake, camel]) => {
 const NUMBER_FIELDS = new Set([
   'qualificationScore', 'estimatedValue', 'probabilityPercent', 'weightedValue',
   'orderAmount', 'views', 'comments', 'saves', 'replies', 'engagements', 'leadsGenerated',
+  'projectedCloseAmount',
 ]);
 
 // Dynamic Tab name ↔ JS collection key mapping
@@ -244,14 +281,24 @@ class SheetsService {
     const tabName = resolveJsKeyToTab(jsKey);
     if (!tabName) throw new Error(`Unknown collection: ${jsKey}`);
 
-    // Convert camelCase → snake_case for the sheet
+    // Convert camelCase → snake_case for the sheet (dual columns support)
     const sheetRow = {};
     Object.entries(record).forEach(([key, val]) => {
-      const col = REVERSE_COLUMN_MAP[key] || key;
-      if (val === true) sheetRow[col] = 'TRUE';
-      else if (val === false) sheetRow[col] = 'FALSE';
-      else if (Array.isArray(val)) sheetRow[col] = val.join(', ');
-      else sheetRow[col] = val;
+      let convertedVal = val;
+      if (val === true) convertedVal = 'TRUE';
+      else if (val === false) convertedVal = 'FALSE';
+      else if (Array.isArray(val)) convertedVal = val.join(', ');
+
+      let mapped = false;
+      Object.entries(COLUMN_MAP).forEach(([snake, camel]) => {
+        if (camel === key) {
+          sheetRow[snake] = convertedVal;
+          mapped = true;
+        }
+      });
+      if (!mapped) {
+        sheetRow[key] = convertedVal;
+      }
     });
 
     const response = await fetch(settingsEngine.getWebAppUrl(), {
@@ -270,13 +317,24 @@ class SheetsService {
     const tabName = resolveJsKeyToTab(jsKey);
     if (!tabName) throw new Error(`Unknown collection: ${jsKey}`);
 
+    // Convert camelCase → snake_case for the sheet (dual columns support)
     const sheetRow = {};
     Object.entries(record).forEach(([key, val]) => {
-      const col = REVERSE_COLUMN_MAP[key] || key;
-      if (val === true) sheetRow[col] = 'TRUE';
-      else if (val === false) sheetRow[col] = 'FALSE';
-      else if (Array.isArray(val)) sheetRow[col] = val.join(', ');
-      else sheetRow[col] = val;
+      let convertedVal = val;
+      if (val === true) convertedVal = 'TRUE';
+      else if (val === false) convertedVal = 'FALSE';
+      else if (Array.isArray(val)) convertedVal = val.join(', ');
+
+      let mapped = false;
+      Object.entries(COLUMN_MAP).forEach(([snake, camel]) => {
+        if (camel === key) {
+          sheetRow[snake] = convertedVal;
+          mapped = true;
+        }
+      });
+      if (!mapped) {
+        sheetRow[key] = convertedVal;
+      }
     });
 
     const response = await fetch(settingsEngine.getWebAppUrl(), {
@@ -320,18 +378,28 @@ class SheetsService {
 
     // LinkedIn Leads
     (data.linkedinLeads || []).forEach(lead => {
-      const contact = contactMap[lead.contactId];
-      lead.contactName = contact?.fullName || lead.contactId || '—';
-      const org = orgMap[lead.organizationId] || orgMap[contact?.organizationId];
-      lead.company = org?.organizationName || '';
+      const contact = contactMap[lead.contactId] || (data.contacts || []).find(c => c.fullName === lead.contactName);
+      lead.contactName = lead.contactName || contact?.fullName || lead.contactId || '—';
+      lead.email = lead.email || contact?.email || '';
+      lead.mobile = lead.mobile || contact?.mobile || '';
+      lead.status = lead.status || contact?.status || 'Lead';
+      const org = orgMap[lead.organizationId] || orgMap[contact?.organizationId] || (data.organizations || []).find(o => o.organizationName === lead.company);
+      lead.company = lead.company || org?.organizationName || '';
+      
+      lead.projectedCloseAmount = parseFloat(lead.projectedCloseAmount) || 0;
+      lead.qualificationScore = parseFloat(lead.qualificationScore) || 0;
+      lead.source = lead.source || 'LinkedIn';
     });
 
     // Prime Pipeline
     (data.primePipeline || []).forEach(opp => {
-      const contact = contactMap[opp.contactId];
-      opp.contactName = contact?.fullName || opp.contactId || '—';
+      const contact = contactMap[opp.contactId] || (data.contacts || []).find(c => c.fullName === opp.contactName);
+      opp.contactName = opp.contactName || contact?.fullName || opp.contactId || '—';
       const org = orgMap[opp.organizationId];
-      opp.orgName = org?.organizationName || '';
+      opp.orgName = opp.orgName || org?.organizationName || '';
+      
+      opp.mobile = opp.mobile || contact?.mobile || '';
+      opp.email = opp.email || contact?.email || '';
     });
 
     // Calmera Orders
