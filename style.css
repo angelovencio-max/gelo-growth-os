@@ -8,11 +8,11 @@
 
 /* ── Design Tokens ────────────────────────────────────────── */
 :root {
-  /* Accent palette (same in both modes) */
-  --accent:        #6366f1;
-  --accent-hover:  #4f46e5;
-  --accent-light:  #818cf8;
-  --accent-muted:  rgba(99,102,241,0.15);
+  /* Accent palette (soft purple/violet) */
+  --accent:        #8b5cf6;
+  --accent-hover:  #7c3aed;
+  --accent-light:  #a78bfa;
+  --accent-muted:  rgba(139,92,246,0.15);
   --green:         #10b981;
   --green-muted:   rgba(16,185,129,0.15);
   --amber:         #f59e0b;
@@ -77,65 +77,67 @@
 
 /* ── Dark Theme (default) ─────────────────────────────────── */
 :root,
-[data-theme="dark"] {
-  --bg:              #0d1321;
-  --bg-secondary:    #080e1a;
-  --surface:         #1a2540;
-  --surface-alt:     #111d35;
-  --surface-hover:   #1f2d4a;
-  --surface-active:  #243356;
-  --border:          #2a3a55;
-  --border-subtle:   #1e2d42;
-  --text-primary:    #f1f5f9;
-  --text-secondary:  #94a3b8;
-  --text-muted:      #64748b;
-  --text-inverse:    #0f172a;
-  --shadow:          0 4px 24px rgba(0,0,0,0.5);
-  --shadow-sm:       0 2px 8px rgba(0,0,0,0.35);
-  --shadow-lg:       0 8px 40px rgba(0,0,0,0.6);
-  --sidebar-bg:      #0a1120;
-  --sidebar-text:    #cbd5e1;
-  --sidebar-hover:   rgba(255,255,255,0.06);
-  --sidebar-active:  rgba(99,102,241,0.2);
-  --sidebar-logo-color: #ffffff;
-  --sidebar-active-text: #ffffff;
-  --sidebar-border:  rgba(255,255,255,0.05);
-  --input-bg:        #0d1828;
-  --input-border:    #2a3a55;
-  --overlay:         rgba(0,0,0,0.6);
-  --scrollbar-bg:    #1a2540;
-  --scrollbar-thumb: #2a3a55;
+[data-theme="dark"],
+.theme-dark {
+  --bg:              #050505;
+  --bg-secondary:    #0a0a0a;
+  --surface:         #141414;
+  --surface-alt:     #0d0d0d;
+  --surface-hover:   #1f1f1f;
+  --surface-active:  #262626;
+  --border:          rgba(255,255,255,0.08);
+  --border-subtle:   rgba(255,255,255,0.04);
+  --text-primary:    #F5F5F5;
+  --text-secondary:  #A3A3A3;
+  --text-muted:      #737373;
+  --text-inverse:    #050505;
+  --shadow:          0 4px 24px rgba(0,0,0,0.8);
+  --shadow-sm:       0 2px 8px rgba(0,0,0,0.6);
+  --shadow-lg:       0 8px 40px rgba(0,0,0,0.9);
+  --sidebar-bg:      #050505;
+  --sidebar-text:    #A3A3A3;
+  --sidebar-hover:   rgba(255,255,255,0.05);
+  --sidebar-active:  rgba(139,92,246,0.15);
+  --sidebar-logo-color: #F5F5F5;
+  --sidebar-active-text: #F5F5F5;
+  --sidebar-border:  rgba(255,255,255,0.08);
+  --input-bg:        #141414;
+  --input-border:    rgba(255,255,255,0.08);
+  --overlay:         rgba(0,0,0,0.8);
+  --scrollbar-bg:    #0a0a0a;
+  --scrollbar-thumb: #1f1f1f;
 }
 
 /* ── Light Theme ──────────────────────────────────────────── */
-[data-theme="light"] {
-  --bg:              #f0f4f9;
-  --bg-secondary:    #e8edf4;
-  --surface:         #ffffff;
-  --surface-alt:     #f8fafc;
-  --surface-hover:   #f1f5f9;
-  --surface-active:  #ede9fe;
-  --border:          #e2e8f0;
-  --border-subtle:   #f1f5f9;
-  --text-primary:    #0f172a;
-  --text-secondary:  #475569;
-  --text-muted:      #94a3b8;
-  --text-inverse:    #f1f5f9;
-  --shadow:          0 4px 24px rgba(15,23,42,0.08);
-  --shadow-sm:       0 2px 8px rgba(15,23,42,0.06);
-  --shadow-lg:       0 8px 40px rgba(15,23,42,0.12);
-  --sidebar-bg:      #ffffff;
-  --sidebar-text:    #475569;
-  --sidebar-hover:   rgba(15,23,42,0.05);
-  --sidebar-active:  rgba(99,102,241,0.12);
-  --sidebar-logo-color: #0f172a;
-  --sidebar-active-text: var(--accent);
-  --sidebar-border:  #e2e8f0;
-  --input-bg:        #f8fafc;
-  --input-border:    #e2e8f0;
-  --overlay:         rgba(15,23,42,0.5);
-  --scrollbar-bg:    #f1f5f9;
-  --scrollbar-thumb: #cbd5e1;
+[data-theme="light"],
+.theme-light {
+  --bg:              #FAFAFA;
+  --bg-secondary:    #F5F5F5;
+  --surface:         #FFFFFF;
+  --surface-alt:     #FAFAFA;
+  --surface-hover:   #F5F5F5;
+  --surface-active:  #F3E8FF;
+  --border:          #E5E5E5;
+  --border-subtle:   #F5F5F5;
+  --text-primary:    #171717;
+  --text-secondary:  #525252;
+  --text-muted:      #737373;
+  --text-inverse:    #FFFFFF;
+  --shadow:          0 4px 24px rgba(0,0,0,0.04);
+  --shadow-sm:       0 2px 8px rgba(0,0,0,0.03);
+  --shadow-lg:       0 8px 40px rgba(0,0,0,0.06);
+  --sidebar-bg:      #FFFFFF;
+  --sidebar-text:    #525252;
+  --sidebar-hover:   rgba(0,0,0,0.04);
+  --sidebar-active:  rgba(139,92,246,0.1);
+  --sidebar-logo-color: #171717;
+  --sidebar-active-text: #8b5cf6;
+  --sidebar-border:  #E5E5E5;
+  --input-bg:        #FFFFFF;
+  --input-border:    #E5E5E5;
+  --overlay:         rgba(0,0,0,0.4);
+  --scrollbar-bg:    #FAFAFA;
+  --scrollbar-thumb: #D4D4D4;
 }
 
 /* ── Reset & Base ─────────────────────────────────────────── */
@@ -617,43 +619,77 @@ body {
 /* ── KPI Cards Grid ───────────────────────────────────────── */
 .gos-kpi-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
-  margin-bottom: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 28px;
 }
 .gos-kpi-card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 16px;
+  padding: 20px;
   position: relative;
   overflow: hidden;
-  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
-  cursor: default;
+  transition: all var(--transition);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
-.gos-kpi-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
-.gos-kpi-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
+.gos-kpi-card:hover {
+  border-color: var(--accent-light);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
 }
-.gos-kpi-card.red::before   { background: var(--red); }
-.gos-kpi-card.amber::before { background: var(--amber); }
-.gos-kpi-card.blue::before  { background: var(--blue); }
-.gos-kpi-card.green::before { background: var(--green); }
-.gos-kpi-card.purple::before{ background: var(--purple); }
-.gos-kpi-card.cyan::before  { background: var(--cyan); }
 .gos-kpi-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
-.gos-kpi-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
-.gos-kpi-icon  { font-size: 18px; }
-.gos-kpi-value { font-size: 26px; font-weight: 800; color: var(--text-primary); line-height: 1; margin-bottom: 4px; }
-.gos-kpi-detail{ font-size: 11px; color: var(--text-muted); }
+.gos-kpi-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+.gos-kpi-icon {
+  font-size: 20px;
+  color: var(--accent);
+  transition: transform var(--transition);
+}
+.gos-kpi-card:hover .gos-kpi-icon {
+  transform: scale(1.1);
+}
+.gos-kpi-value-wrapper {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+.gos-kpi-value {
+  font-size: 32px;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1;
+}
+.gos-kpi-arrow {
+  font-size: 16px;
+  color: var(--accent);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: all var(--transition);
+}
+.gos-kpi-card:hover .gos-kpi-arrow {
+  opacity: 1;
+  transform: translateX(0);
+}
+.gos-kpi-detail {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 8px;
+  font-weight: 500;
+}
 
 /* ── Section Grid ─────────────────────────────────────────── */
 .gos-section-grid {
@@ -2277,5 +2313,152 @@ tr.row-overdue:hover td {
 @media (max-width: 767px) {
   .btn-sidebar-toggle {
     display: none !important;
+  }
+}
+
+/* ── Hero / Greeting Section ─────────────────────────────── */
+.gos-hero-section {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 24px;
+  gap: 20px;
+  transition: all var(--transition);
+}
+
+.hero-left {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hero-greeting {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.hero-subtext {
+  font-size: 14px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.hero-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.summary-dot {
+  font-size: 8px;
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+
+/* Weather Widget Card */
+.gos-weather-widget {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 18px;
+  min-width: 220px;
+  transition: all var(--transition);
+}
+
+.gos-weather-widget:hover {
+  border-color: var(--accent-muted);
+  box-shadow: var(--shadow-sm);
+}
+
+.weather-icon-temp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.weather-emoji {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.weather-temp {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.weather-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.weather-location {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.weather-date {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Stacking for small viewports */
+@media (max-width: 767px) {
+  .gos-hero-section {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 18px;
+    gap: 16px;
+  }
+  .gos-weather-widget {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* Responsive Helper Utilities */
+@media (min-width: 768px) {
+  .show-on-mobile {
+    display: none !important;
+  }
+  .hide-on-mobile {
+    display: block !important;
+  }
+  table.hide-on-mobile {
+    display: table !important;
+  }
+  div.hide-on-mobile {
+    display: block !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .hide-on-mobile {
+    display: none !important;
+  }
+  .show-on-mobile {
+    display: block !important;
+  }
+  div.show-on-mobile {
+    display: block !important;
+  }
+  .mobile-only-cards {
+    display: block !important;
   }
 }

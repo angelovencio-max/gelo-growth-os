@@ -417,7 +417,7 @@ class GeloGrowthOS {
     // Build title from module label
     const mod = modules.find(m => m.id === this.currentModule) || {};
     const defaultSubtitles = {
-      today:          `Good ${this._getTimeOfDay()}, ${profile.displayName}! Here's your daily action plan.`,
+      today:          'Your personal business command center',
       calendar:       'Your upcoming calls, follow-ups, and scheduled tasks',
       leads:          'Capture, qualify, nurture, and convert your leads',
       messages:       'Generate and copy messages for any lead or stage',
@@ -467,170 +467,337 @@ class GeloGrowthOS {
   // ── Today / Command Center ──────────────────────────────────
   renderToday(container) { this.renderCommandCenter(container); }
 
+  renderHeroHeader() {
+    const settings = settingsEngine.get();
+    const profile = settings.profile || {};
+    const displayName = profile.displayName || 'Gelo';
+    const timeOfDay = this._getTimeOfDay();
+    
+    const todayStr = getDemoToday();
+    const events = this.gatherCalendarEvents();
+    
+    const todayEvents = events.filter(e => e.date === todayStr);
+    const followUpsToday = todayEvents.filter(e => e.type === 'Follow-up').length;
+    const callsToday = todayEvents.filter(e => e.type.toLowerCase().includes('call')).length;
+    
+    const overdueEvents = events.filter(e => {
+      const isBefore = e.date < todayStr;
+      const isPending = !['Done', 'Completed', 'Cancelled', 'Rescheduled', 'Confirmed', 'Closed', 'Won', 'Lost'].includes(e.status);
+      return isBefore && isPending;
+    }).length;
+
+    const summaryText = `
+      <div class="hero-summary">
+        <span>${followUpsToday} follow-up${followUpsToday === 1 ? '' : 's'}</span>
+        <span class="summary-dot">•</span>
+        <span>${callsToday} call${callsToday === 1 ? '' : 's'}</span>
+        <span class="summary-dot">•</span>
+        <span class="${overdueEvents > 0 ? 'text-red font-bold animate-pulse' : ''}">${overdueEvents} overdue</span>
+      </div>
+    `;
+
+    const today = new Date();
+    const dateOpts = { weekday: 'long', month: 'short', day: 'numeric' };
+    const formattedDate = today.toLocaleDateString('en-US', dateOpts);
+
+    return `
+      <div class="gos-hero-section">
+        <div class="hero-left">
+          <h2 class="hero-greeting">Good ${timeOfDay}, ${displayName}</h2>
+          <span class="hero-subtext">Here’s your focus for today.</span>
+          ${summaryText}
+        </div>
+        <div class="gos-weather-widget">
+          <div class="weather-icon-temp">
+            <span class="weather-emoji">☀️</span>
+            <span class="weather-temp">29°C</span>
+          </div>
+          <div class="weather-meta">
+            <span class="weather-location">Dasmariñas</span>
+            <span class="weather-date">${formattedDate}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   // ── Legacy Command Center (kept for compatibility) ───────────
   renderCommandCenter(container) {
-    const tasks = this.data.tasks;
-    const openTasks = tasks.filter(t => t.status !== 'Completed' && t.status !== 'Cancelled');
-    const overdue = openTasks.filter(t => isOverdue(t.dueAt));
-    const dueToday = openTasks.filter(t => isDueToday(t.dueAt));
-    const dueWeek = openTasks.filter(t => { const d = daysUntil(t.dueAt); return d > 0 && d <= 7; });
-    const critical = openTasks.filter(t => t.priority === 'Critical');
+    const todayStr = getDemoToday();
+    const leads = this.data.linkedinLeads || [];
+    const pipeline = this.data.primePipeline || [];
+    const tasks = this.data.tasks || [];
+    const events = this.gatherCalendarEvents();
 
-    const pipeline = this.data.primePipeline;
-    const activeDeals = pipeline.filter(p => !['Won', 'Lost'].includes(p.stage));
-    const totalWeighted = pipeline.reduce((s, p) => s + (p.weightedValue || 0), 0);
-    const wonDeals = pipeline.filter(p => p.stage === 'Won');
+    // 1. Calculations
+    const followUpsToday = leads.filter(l => l.nextActionDate === todayStr && !['Closed', 'Converted', 'Won'].includes(l.stage)).length;
+    const hotProspects = leads.filter(l => (l.qualificationScore >= 80 || l.priority === 'High' || l.priority === 'Urgent') && !['Closed', 'Converted', 'Won'].includes(l.stage)).length;
+    const newReplies = leads.filter(l => l.stage === 'Replied' || l.messageStatus === 'Replied').length;
+    const callsToBook = pipeline.filter(p => !['Won', 'Lost'].includes(p.stage) && (p.stage === 'Discovery' || p.stage === 'New Inquiry' || p.stage === 'Call Booked')).length;
 
-    const leads = this.data.linkedinLeads;
-    const activeLeads = leads.filter(l => !['Closed', 'Converted'].includes(l.stage));
+    // 2. Today's Actions List (Due today or overdue leads)
+    const todayActionsList = leads.filter(l => l.nextActionDate && l.nextActionDate <= todayStr && !['Closed', 'Converted', 'Won'].includes(l.stage))
+      .sort((a, b) => {
+        if (a.nextActionDate !== b.nextActionDate) return a.nextActionDate < b.nextActionDate ? -1 : 1;
+        return (b.qualificationScore || 0) - (a.qualificationScore || 0);
+      });
 
-    const orders = this.data.calmeraOrders;
-    const pendingOrders = orders.filter(o => !['Confirmed', 'Closed'].includes(o.reconfirmationStatus) && o.reconfirmationStatus !== 'Changed');
-    const atRiskOrders = orders.filter(o => o.orderStatus === 'At Risk' || o.reconfirmationStatus === 'Escalated');
+    // 3. Today's Calendar events
+    const todayEvents = events.filter(e => e.date === todayStr);
+    const overdueEvents = events.filter(e => {
+      const isBefore = e.date < todayStr;
+      const isPending = !['Done', 'Completed', 'Cancelled', 'Rescheduled', 'Confirmed', 'Closed', 'Won', 'Lost'].includes(e.status);
+      return isBefore && isPending;
+    });
+    
+    const nextTask = tasks.filter(t => t.status !== 'Completed' && t.status !== 'Cancelled' && t.dueAt >= todayStr)
+      .sort((a, b) => a.dueAt < b.dueAt ? -1 : 1)[0];
 
+    // 4. Render Layout
     container.innerHTML = `
+      <!-- Part 4 & 5: Hero Header + Weather Widget -->
+      ${this.renderHeroHeader()}
+
+      <!-- Part 6: Priority Cards Grid -->
       <div class="gos-kpi-grid">
-        <div class="gos-kpi-card red">
+        <div class="gos-kpi-card" onclick="app.navigateTo('leads')">
           <div class="gos-kpi-header">
-            <span class="gos-kpi-label">Overdue</span>
-            <span class="gos-kpi-icon">⚠️</span>
+            <span class="gos-kpi-label">Follow-ups Today</span>
+            <span class="gos-kpi-icon">📅</span>
           </div>
-          <div class="gos-kpi-value">${overdue.length}</div>
-          <div class="gos-kpi-detail">${critical.length} critical actions</div>
+          <div class="gos-kpi-value-wrapper">
+            <div class="gos-kpi-value">${followUpsToday}</div>
+            <div class="gos-kpi-arrow">→</div>
+          </div>
+          <div class="gos-kpi-detail">Outreach actions scheduled today</div>
         </div>
-        <div class="gos-kpi-card blue">
+
+        <div class="gos-kpi-card" onclick="app.navigateTo('leads')">
           <div class="gos-kpi-header">
-            <span class="gos-kpi-label">Due Today</span>
-            <span class="gos-kpi-icon">📋</span>
+            <span class="gos-kpi-label">Hot Prospects</span>
+            <span class="gos-kpi-icon">🔥</span>
           </div>
-          <div class="gos-kpi-value">${dueToday.length}</div>
-          <div class="gos-kpi-detail">${dueWeek.length} due this week</div>
+          <div class="gos-kpi-value-wrapper">
+            <div class="gos-kpi-value">${hotProspects}</div>
+            <div class="gos-kpi-arrow">→</div>
+          </div>
+          <div class="gos-kpi-detail">Leads with Score ≥ 80 or High Priority</div>
         </div>
-        <div class="gos-kpi-card purple">
+
+        <div class="gos-kpi-card" onclick="app.navigateTo('messages')">
           <div class="gos-kpi-header">
-            <span class="gos-kpi-label">Pipeline Value</span>
-            <span class="gos-kpi-icon">💰</span>
+            <span class="gos-kpi-label">New Replies</span>
+            <span class="gos-kpi-icon">💬</span>
           </div>
-          <div class="gos-kpi-value">₱${this.formatNumber(totalWeighted)}</div>
-          <div class="gos-kpi-detail">${activeDeals.length} active deals</div>
+          <div class="gos-kpi-value-wrapper">
+            <div class="gos-kpi-value">${newReplies}</div>
+            <div class="gos-kpi-arrow">→</div>
+          </div>
+          <div class="gos-kpi-detail">Leads awaiting a response template</div>
         </div>
-        <div class="gos-kpi-card green">
+
+        <div class="gos-kpi-card" onclick="app.navigateTo('salesPipeline')">
           <div class="gos-kpi-header">
-            <span class="gos-kpi-label">Active Leads</span>
-            <span class="gos-kpi-icon">🔗</span>
+            <span class="gos-kpi-label">Calls to Book</span>
+            <span class="gos-kpi-icon">📞</span>
           </div>
-          <div class="gos-kpi-value">${activeLeads.length}</div>
-          <div class="gos-kpi-detail">${leads.filter(l => l.stage === 'Converted').length} converted</div>
-        </div>
-        <div class="gos-kpi-card amber">
-          <div class="gos-kpi-header">
-            <span class="gos-kpi-label">Pending Orders</span>
-            <span class="gos-kpi-icon">📦</span>
+          <div class="gos-kpi-value-wrapper">
+            <div class="gos-kpi-value">${callsToBook}</div>
+            <div class="gos-kpi-arrow">→</div>
           </div>
-          <div class="gos-kpi-value">${pendingOrders.length}</div>
-          <div class="gos-kpi-detail">${atRiskOrders.length > 0 ? `<span class="text-red">${atRiskOrders.length} at risk!</span>` : 'No escalations'}</div>
-        </div>
-        <div class="gos-kpi-card green">
-          <div class="gos-kpi-header">
-            <span class="gos-kpi-label">Won Revenue</span>
-            <span class="gos-kpi-icon">🏆</span>
-          </div>
-          <div class="gos-kpi-value">₱${this.formatNumber(wonDeals.reduce((s, d) => s + d.estimatedValue, 0))}</div>
-          <div class="gos-kpi-detail">${wonDeals.length} closed won</div>
+          <div class="gos-kpi-detail">Deals in Discovery or booking stages</div>
         </div>
       </div>
 
+      <!-- Today's Schedule and Command Grid -->
       <div class="gos-section-grid">
+        
+        <!-- Part 7: Today's Calendar aggregates -->
         <div class="gos-section-card">
           <div class="gos-section-card-header">
-            <span class="gos-section-card-title">🔴 Critical & Overdue Tasks</span>
-            <span class="gos-table-count">${overdue.length + critical.filter(t => !isOverdue(t.dueAt)).length}</span>
+            <span class="gos-section-card-title">📅 Today's Calendar & Aggregates</span>
           </div>
           <div class="gos-section-card-body">
-            <ul class="gos-task-list">
-              ${[...overdue, ...critical.filter(t => !isOverdue(t.dueAt))].slice(0, 6).map(t => this.renderTaskItem(t)).join('')}
-              ${overdue.length === 0 && critical.filter(t => !isOverdue(t.dueAt)).length === 0 ? '<div class="gos-empty" style="padding:30px"><span class="gos-empty-icon">✅</span><span class="gos-empty-title">All clear!</span></div>' : ''}
-            </ul>
+            <div class="schedule-summary-box">
+              ${todayEvents.length === 0 && overdueEvents.length === 0 && !nextTask ? `
+                <div class="gos-empty" style="padding:40px 20px">
+                  <span class="gos-empty-icon">☕</span>
+                  <span class="gos-empty-title">Your schedule is clear today</span>
+                  <span class="gos-empty-desc">Take some time to network or plan content.</span>
+                </div>
+              ` : `
+                <ul class="gos-task-list">
+                  <!-- Scheduled Calls Today -->
+                  ${todayEvents.filter(e => e.type.toLowerCase().includes('call')).map(e => `
+                    <li class="gos-task-item event-call" onclick="app.openRecordPanel('${e.viewType}', '${e.id}')">
+                      <span class="task-badge-icon">📞</span>
+                      <div class="gos-task-info">
+                        <div class="gos-task-title">Call: ${e.name}</div>
+                        <div class="gos-task-meta">
+                          <span>${e.time}</span>
+                          ${this.renderBadge(e.priority)}
+                          <span>${settingsEngine.getModuleLabel(VIEW_TO_MODULE[e.viewType])}</span>
+                        </div>
+                      </div>
+                    </li>
+                  `).join('')}
+
+                  <!-- Scheduled Follow-ups Today -->
+                  ${todayEvents.filter(e => e.type === 'Follow-up').map(e => `
+                    <li class="gos-task-item event-followup" onclick="app.openRecordPanel('${e.viewType}', '${e.id}')">
+                      <span class="task-badge-icon">✉️</span>
+                      <div class="gos-task-info">
+                        <div class="gos-task-title">Follow-up: ${e.name}</div>
+                        <div class="gos-task-meta">
+                          <span>${e.time}</span>
+                          ${this.renderBadge(e.priority)}
+                          <span>${e.nextAction}</span>
+                        </div>
+                      </div>
+                    </li>
+                  `).join('')}
+
+                  <!-- Overdue Actions -->
+                  ${overdueEvents.slice(0, 3).map(e => `
+                    <li class="gos-task-item overdue" onclick="app.openRecordPanel('${e.viewType}', '${e.id}')">
+                      <span class="task-badge-icon text-red">⚠️</span>
+                      <div class="gos-task-info">
+                        <div class="gos-task-title">Overdue: ${e.name}</div>
+                        <div class="gos-task-meta">
+                          <span class="text-red font-bold">Due ${e.date}</span>
+                          <span>${e.type}</span>
+                          ${this.renderBadge(e.priority)}
+                        </div>
+                      </div>
+                    </li>
+                  `).join('')}
+
+                  <!-- Next Upcoming Manual Task -->
+                  ${nextTask ? `
+                    <li class="gos-task-item next-task" onclick="app.openTaskPanel('${nextTask.taskId}')">
+                      <span class="task-badge-icon">📝</span>
+                      <div class="gos-task-info">
+                        <div class="gos-task-title">Next Task: ${nextTask.title}</div>
+                        <div class="gos-task-meta">
+                          <span class="${isOverdue(nextTask.dueAt) ? 'text-red font-bold' : ''}">Due ${nextTask.dueAt}</span>
+                          ${this.renderBadge(nextTask.priority)}
+                        </div>
+                      </div>
+                    </li>
+                  ` : ''}
+                </ul>
+              `}
+            </div>
           </div>
         </div>
 
-        <div class="gos-section-card">
+        <!-- Today's Action Center & Table / Mobile Cards -->
+        <div class="gos-section-card" style="grid-column: span 2">
           <div class="gos-section-card-header">
-            <span class="gos-section-card-title">📋 Due Today</span>
-            <span class="gos-table-count">${dueToday.length}</span>
+            <span class="gos-section-card-title">🔥 Today's Action Center</span>
+            <span class="gos-table-count">${todayActionsList.length} leads</span>
           </div>
-          <div class="gos-section-card-body">
-            <ul class="gos-task-list">
-              ${dueToday.slice(0, 6).map(t => this.renderTaskItem(t)).join('')}
-              ${dueToday.length === 0 ? '<div class="gos-empty" style="padding:30px"><span class="gos-empty-icon">📭</span><span class="gos-empty-title">Nothing due today</span></div>' : ''}
-            </ul>
+          <div class="gos-section-card-body" style="padding:0">
+            ${todayActionsList.length === 0 ? `
+              <div class="gos-empty" style="padding:50px 20px">
+                <span class="gos-empty-icon">🎉</span>
+                <span class="gos-empty-title">All actions completed!</span>
+                <span class="gos-empty-desc">No follow-ups due today. Keep up the amazing work!</span>
+              </div>
+            ` : `
+              <!-- Desktop Table View -->
+              <div class="gos-table-responsive hide-on-mobile">
+                <table class="gos-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Offer</th>
+                      <th>Stage</th>
+                      <th class="cell-center">Score</th>
+                      <th>Next Action</th>
+                      <th>Follow-up Date</th>
+                      <th class="cell-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${todayActionsList.map(l => {
+                      const isOverdueVal = l.nextActionDate < todayStr;
+                      return `
+                        <tr>
+                          <td class="cell-name clickable" onclick="app.openRecordPanel('linkedin', '${l.leadId}')">
+                            <div class="name-block">
+                              <span class="name-text">${l.contactName || 'Unknown Contact'}</span>
+                            </div>
+                          </td>
+                          <td>${l.serviceInterest || 'N/A'}</td>
+                          <td>${this.renderBadge(l.stage)}</td>
+                          <td class="cell-center">
+                            <span class="score-badge ${l.qualificationScore >= 80 ? 'high' : l.qualificationScore >= 50 ? 'medium' : 'low'}">
+                              ${l.qualificationScore || 0}
+                            </span>
+                          </td>
+                          <td><span class="action-summary">${l.nextAction || 'Follow up'}</span></td>
+                          <td>
+                            <span class="date-badge ${isOverdueVal ? 'overdue animate-pulse' : 'today'}">
+                              ${isOverdueVal ? '⚠️ ' : ''}${l.nextActionDate}
+                            </span>
+                          </td>
+                          <td class="cell-right">
+                            <div class="gos-row-actions">
+                              <button class="gos-btn btn-sm btn-ghost" onclick="event.stopPropagation(); app.openMessageForRecord('linkedin', '${l.leadId}')" title="Generate customized message">💬 Msg</button>
+                              <button class="gos-btn btn-sm btn-ghost" onclick="event.stopPropagation(); app.copyMessageDirectly('linkedin', '${l.leadId}')" title="Copy default follow-up directly">📋 Copy</button>
+                              <button class="gos-btn btn-sm btn-primary" onclick="event.stopPropagation(); app.markEventCompleted('linkedin', '${l.leadId}')" title="Mark action completed">✓ Done</button>
+                              <button class="gos-btn btn-sm btn-secondary" onclick="event.stopPropagation(); app.openRecordPanel('linkedin', '${l.leadId}')" title="View details panel">⋯ More</button>
+                            </div>
+                          </td>
+                        </tr>
+                      `;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Mobile Stacked Card View (viewport < 768px) -->
+              <div class="mobile-only-cards show-on-mobile" style="display:none">
+                <div class="mobile-actions-grid" style="display:flex; flex-direction:column; gap:12px; padding:16px;">
+                  ${todayActionsList.map(l => {
+                    const isOverdueVal = l.nextActionDate < todayStr;
+                    return `
+                      <div class="action-card" onclick="app.openRecordPanel('linkedin', '${l.leadId}')">
+                        <div class="action-card-top">
+                          <div>
+                            <div class="action-card-name">${l.contactName || 'Unknown Contact'}</div>
+                            <div class="action-card-offer">${l.serviceInterest || 'Offer Fit: N/A'}</div>
+                          </div>
+                          <div class="action-card-score">
+                            <span class="score-badge ${l.qualificationScore >= 80 ? 'high' : l.qualificationScore >= 50 ? 'medium' : 'low'}">
+                              ${l.qualificationScore || 0}
+                            </span>
+                          </div>
+                        </div>
+                        <div class="action-card-next">
+                          <strong>Next:</strong> ${l.nextAction || 'Follow up with lead'}
+                        </div>
+                        <div style="margin-top:6px; font-size:11px;">
+                          <span class="date-badge ${isOverdueVal ? 'overdue animate-pulse' : 'today'}">
+                            ${isOverdueVal ? '⚠️ OVERDUE: ' : 'DUE: '}${l.nextActionDate}
+                          </span>
+                          <span style="margin-left:6px;">${this.renderBadge(l.stage)}</span>
+                        </div>
+                        <div class="action-card-actions">
+                          <button class="gos-btn btn-sm btn-ghost" onclick="event.stopPropagation(); app.openMessageForRecord('linkedin', '${l.leadId}')" style="flex:1; min-height:44px;">💬 Msg</button>
+                          <button class="gos-btn btn-sm btn-ghost" onclick="event.stopPropagation(); app.copyMessageDirectly('linkedin', '${l.leadId}')" style="flex:1; min-height:44px;">📋 Copy</button>
+                          <button class="gos-btn btn-sm btn-primary" onclick="event.stopPropagation(); app.markEventCompleted('linkedin', '${l.leadId}')" style="flex:1; min-height:44px;">✓ Done</button>
+                        </div>
+                      </div>
+                    `;
+                  }).join('')}
+                </div>
+              </div>
+            `}
           </div>
         </div>
 
-        <div class="gos-section-card">
-          <div class="gos-section-card-header">
-            <span class="gos-section-card-title">👤 ${settingsEngine.getModuleLabel('leads')} Funnel</span>
-            <button class="gos-btn gos-btn-ghost gos-btn-sm" onclick="app.navigateTo('leads')">View All →</button>
-          </div>
-          <div class="gos-section-card-body">
-            ${this.renderFunnel(leads, ['New', 'Qualified', 'Contacted', 'Nurturing', 'Converted'])}
-          </div>
-        </div>
-
-        <div class="gos-section-card">
-          <div class="gos-section-card-header">
-            <span class="gos-section-card-title">💼 ${settingsEngine.getModuleLabel('salesPipeline')}</span>
-            <button class="gos-btn gos-btn-ghost gos-btn-sm" onclick="app.navigateTo('salesPipeline')">View All →</button>
-          </div>
-          <div class="gos-section-card-body">
-            ${this.renderFunnel(pipeline, ['New Inquiry', 'Discovery', 'Proposal Sent', 'Negotiation', 'Won'], 'stage')}
-          </div>
-        </div>
-
-        <div class="gos-section-card">
-          <div class="gos-section-card-header">
-            <span class="gos-section-card-title">📦 ${settingsEngine.getModuleLabel('productsOrders')} Alerts</span>
-            <button class="gos-btn gos-btn-ghost gos-btn-sm" onclick="app.navigateTo('productsOrders')">View All →</button>
-          </div>
-          <div class="gos-section-card-body">
-            <ul class="gos-task-list">
-              ${orders.filter(o => o.reconfirmationStatus === 'Escalated' || o.reconfirmationStatus === 'Pending Contact' || o.reconfirmationStatus === 'Awaiting Response').slice(0, 4).map(o => `
-                <li class="gos-task-item ${o.reconfirmationStatus === 'Escalated' ? 'overdue' : ''}" onclick="app.openRecordPanel('calmera', '${o.orderId}')">
-                  <div class="gos-task-info">
-                    <div class="gos-task-title">${o.customerName} — ${o.externalOrderRef}</div>
-                    <div class="gos-task-meta">
-                      ${this.renderBadge(o.reconfirmationStatus)}
-                      <span>₱${o.orderAmount.toLocaleString()}</span>
-                      <span>Cutoff: ${o.fulfillmentCutoff}</span>
-                    </div>
-                  </div>
-                </li>
-              `).join('')}
-            </ul>
-          </div>
-        </div>
-
-        <div class="gos-section-card">
-          <div class="gos-section-card-header">
-            <span class="gos-section-card-title">📢 Recent Activity</span>
-          </div>
-          <div class="gos-section-card-body">
-            <ul class="gos-task-list">
-              ${this.data.interactions.slice(0, 5).map(i => `
-                <li class="gos-task-item">
-                  <div class="gos-task-info">
-                    <div class="gos-task-title">${i.contactName} — ${i.interactionType}</div>
-                    <div class="gos-task-meta">
-                      <span>${i.channel}</span>
-                      <span>${i.direction}</span>
-                      <span>${i.occurredAt}</span>
-                    </div>
-                  </div>
-                </li>
-              `).join('')}
-            </ul>
-          </div>
-        </div>
       </div>
     `;
   }

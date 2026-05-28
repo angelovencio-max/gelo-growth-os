@@ -189,6 +189,13 @@ class SettingsEngine {
   applyTheme(theme) {
     const t = theme || this.getTheme();
     document.documentElement.setAttribute('data-theme', t);
+    if (t === 'dark') {
+      document.documentElement.classList.remove('theme-light');
+      document.documentElement.classList.add('theme-dark');
+    } else {
+      document.documentElement.classList.remove('theme-dark');
+      document.documentElement.classList.add('theme-light');
+    }
     // Update stored theme
     if (theme) {
       const settings = this.get();
