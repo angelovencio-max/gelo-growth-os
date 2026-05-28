@@ -89,13 +89,20 @@ const COLUMN_MAP = {
   pipeline_opportunity_id: 'pipelineOpportunityId',
   deal_status: 'dealStatus',
   payment_status: 'paymentStatus',
-  pipeline_stage: 'stage',
+  pipeline_stage: 'pipelineStage',
   deal_value: 'estimatedValue',
   category: 'category',
   source: 'source',
   follow_up_time: 'followUpTime',
   name: 'contactName',
   lead_score: 'qualificationScore',
+  company_brand: 'company',
+  phone_number: 'mobile',
+  email_address: 'email',
+  profile_url: 'linkedinUrl',
+  follow_up_date: 'nextActionDate',
+  projected_close_amount: 'projectedCloseAmount',
+  score: 'qualificationScore',
 };
 
 // Reverse map (camelCase → snake_case)
@@ -124,6 +131,7 @@ Object.entries(PRIORITY_REVERSE).forEach(([camel, snake]) => {
 const NUMBER_FIELDS = new Set([
   'qualificationScore', 'estimatedValue', 'probabilityPercent', 'weightedValue',
   'orderAmount', 'views', 'comments', 'saves', 'replies', 'engagements', 'leadsGenerated',
+  'projectedCloseAmount',
 ]);
 
 // Dynamic Tab name ↔ JS collection key mapping
@@ -273,14 +281,24 @@ class SheetsService {
     const tabName = resolveJsKeyToTab(jsKey);
     if (!tabName) throw new Error(`Unknown collection: ${jsKey}`);
 
-    // Convert camelCase → snake_case for the sheet
+    // Convert camelCase → snake_case for the sheet (dual columns support)
     const sheetRow = {};
     Object.entries(record).forEach(([key, val]) => {
-      const col = REVERSE_COLUMN_MAP[key] || key;
-      if (val === true) sheetRow[col] = 'TRUE';
-      else if (val === false) sheetRow[col] = 'FALSE';
-      else if (Array.isArray(val)) sheetRow[col] = val.join(', ');
-      else sheetRow[col] = val;
+      let convertedVal = val;
+      if (val === true) convertedVal = 'TRUE';
+      else if (val === false) convertedVal = 'FALSE';
+      else if (Array.isArray(val)) convertedVal = val.join(', ');
+
+      let mapped = false;
+      Object.entries(COLUMN_MAP).forEach(([snake, camel]) => {
+        if (camel === key) {
+          sheetRow[snake] = convertedVal;
+          mapped = true;
+        }
+      });
+      if (!mapped) {
+        sheetRow[key] = convertedVal;
+      }
     });
 
     const response = await fetch(settingsEngine.getWebAppUrl(), {
@@ -299,13 +317,24 @@ class SheetsService {
     const tabName = resolveJsKeyToTab(jsKey);
     if (!tabName) throw new Error(`Unknown collection: ${jsKey}`);
 
+    // Convert camelCase → snake_case for the sheet (dual columns support)
     const sheetRow = {};
     Object.entries(record).forEach(([key, val]) => {
-      const col = REVERSE_COLUMN_MAP[key] || key;
-      if (val === true) sheetRow[col] = 'TRUE';
-      else if (val === false) sheetRow[col] = 'FALSE';
-      else if (Array.isArray(val)) sheetRow[col] = val.join(', ');
-      else sheetRow[col] = val;
+      let convertedVal = val;
+      if (val === true) convertedVal = 'TRUE';
+      else if (val === false) convertedVal = 'FALSE';
+      else if (Array.isArray(val)) convertedVal = val.join(', ');
+
+      let mapped = false;
+      Object.entries(COLUMN_MAP).forEach(([snake, camel]) => {
+        if (camel === key) {
+          sheetRow[snake] = convertedVal;
+          mapped = true;
+        }
+      });
+      if (!mapped) {
+        sheetRow[key] = convertedVal;
+      }
     });
 
     const response = await fetch(settingsEngine.getWebAppUrl(), {
@@ -348,22 +377,42 @@ class SheetsService {
     (data.organizations || []).forEach(o => { orgMap[o.organizationId] = o; });
 
     // LinkedIn Leads
-    (data.linkedinLeads || []).forEach(lead => {
-      const contact = contactMap[lead.contactId];
-      lead.contactName = contact?.fullName || lead.contactId || '—';
+    (data.linkedinLeads || []).forEach((lead, index) => {
+      // Auto-repair missing leadId
+      if (!lead.leadId) {
+        lead.leadId = `LL-${String(index + 1).padStart(4, '0')}`;
+        if (sheetsService.isConfigured() && sheetsService.isSignedIn) {
+          sheetsService.updateRecord('linkedinLeads', index, lead).catch(err => {
+            console.error('Failed to auto-repair leadId:', lead, err);
+          });
+        }
+      }
+      const contact = contactMap[lead.contactId] || (data.contacts || []).find(c => c.fullName === lead.contactName);
+      lead.contactName = lead.contactName || contact?.fullName || lead.contactId || '—';
       lead.email = lead.email || contact?.email || '';
       lead.mobile = lead.mobile || contact?.mobile || '';
       lead.status = lead.status || contact?.status || 'Lead';
-      const org = orgMap[lead.organizationId] || orgMap[contact?.organizationId];
-      lead.company = org?.organizationName || '';
+      const org = orgMap[lead.organizationId] || orgMap[contact?.organizationId] || (data.organizations || []).find(o => o.organizationName === lead.company);
+      lead.company = lead.company || org?.organizationName || '';
+      
+      lead.projectedCloseAmount = parseFloat(lead.projectedCloseAmount) || 0;
+      lead.qualificationScore = parseFloat(lead.qualificationScore) || 0;
+      lead.source = lead.source || 'LinkedIn';
     });
 
     // Prime Pipeline
     (data.primePipeline || []).forEach(opp => {
-      const contact = contactMap[opp.contactId];
-      opp.contactName = contact?.fullName || opp.contactId || '—';
+      // Map and synchronize Lead ID
+      opp.leadId = opp.leadId || opp.sourceLeadId || '';
+      opp.sourceLeadId = opp.sourceLeadId || opp.leadId || '';
+      const contact = contactMap[opp.contactId] || (data.contacts || []).find(c => c.fullName === opp.contactName);
+      opp.contactName = opp.contactName || contact?.fullName || opp.contactId || '—';
       const org = orgMap[opp.organizationId];
-      opp.orgName = org?.organizationName || '';
+      opp.orgName = opp.orgName || org?.organizationName || '';
+      
+      opp.mobile = opp.mobile || contact?.mobile || '';
+      opp.email = opp.email || contact?.email || '';
+      opp.estimatedValue = parseFloat(opp.estimatedValue) || 0;
     });
 
     // Calmera Orders

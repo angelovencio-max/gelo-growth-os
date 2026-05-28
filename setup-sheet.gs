@@ -34,7 +34,7 @@ function setupMasterSheet() {
       color: '#3b82f6',
     },
     'LinkedIn_Leads': {
-      headers: ['lead_id', 'contact_id', 'linkedin_url', 'source', 'date_captured', 'connection_status', 'role', 'organization_id', 'interest_signal', 'qualification_score', 'priority', 'stage', 'last_interaction_at', 'next_action', 'next_action_date', 'converted_opportunity_id', 'owner_id', 'notes'],
+      headers: ['lead_id', 'name', 'company_brand', 'phone_number', 'email_address', 'source', 'profile_url', 'stage', 'score', 'priority', 'next_action', 'follow_up_date', 'follow_up_time', 'projected_close_amount', 'converted_to_pipeline', 'pipeline_opportunity_id', 'pipeline_stage', 'deal_status', 'payment_status', 'notes', 'created_at', 'updated_at'],
       color: '#22d3ee',
     },
     'Prime_Pipeline': {

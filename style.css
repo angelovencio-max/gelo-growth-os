@@ -2560,20 +2560,6 @@ tr.row-overdue:hover td {
 .editable-cell:hover {
   background: var(--surface-hover) !important;
 }
-.editable-cell:hover::after {
-  content: '✎';
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 11px;
-  color: var(--accent);
-  opacity: 0.8;
-  pointer-events: none;
-}
-.editable-cell.editing::after {
-  display: none !important;
-}
 .inline-edit-input, .inline-edit-input:focus {
   width: 100%;
   height: 28px;

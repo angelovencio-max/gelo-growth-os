@@ -59,15 +59,15 @@ const DEFAULT_SETTINGS = {
     mainFocus: 'Sales, Content, and Growth',
   },
   modules: [
-    { id: 'today',          label: 'Today',              icon: '🏠', visible: true,  order: 1, description: 'Daily priority actions',                               sheetTab: '' },
-    { id: 'calendar',       label: 'Calendar',           icon: '📅', visible: true,  order: 2, description: 'Calls, follow-ups, and scheduled tasks',               sheetTab: 'Calendar' },
-    { id: 'leads',          label: 'Leads',              icon: '👤', visible: true,  order: 3, description: 'All prospects and leads',                              sheetTab: 'LinkedIn_Leads' },
-    { id: 'messages',       label: 'Messages',           icon: '💬', visible: true,  order: 4, description: 'Message templates and generator',                       sheetTab: '' },
-    { id: 'salesPipeline',  label: 'Sales Pipeline',     icon: '💼', visible: true,  order: 5, description: 'Deals and sales stages',                              sheetTab: 'Prime_Pipeline' },
-    { id: 'brandCommunity', label: 'Brand / Community',  icon: '🌿', visible: true,  order: 6, description: 'Manage your brand, community, or apparel-related work.', sheetTab: 'SCC_Content' },
-    { id: 'productsOrders', label: 'Products / Orders',  icon: '📦', visible: true,  order: 7, description: 'Manage product leads, orders, and customer follow-ups.', sheetTab: 'Calmera_Orders' },
-    { id: 'content',        label: 'Content',            icon: '📝', visible: true,  order: 8, description: 'Content ideas and repurposing',                        sheetTab: 'Repurpose_Outputs' },
-    { id: 'settings',       label: 'Settings',           icon: '⚙️', visible: true,  order: 9, description: 'Customize your workspace',                            sheetTab: '' },
+    { id: 'today',          label: 'Today',              icon: 'home', visible: true,  order: 1, description: 'Daily priority actions',                               sheetTab: '' },
+    { id: 'calendar',       label: 'Calendar',           icon: 'calendar', visible: true,  order: 2, description: 'Calls, follow-ups, and scheduled tasks',               sheetTab: 'Calendar' },
+    { id: 'leads',          label: 'Leads',              icon: 'user', visible: true,  order: 3, description: 'All prospects and leads',                              sheetTab: 'LinkedIn_Leads' },
+    { id: 'messages',       label: 'Messages',           icon: 'message-square', visible: true,  order: 4, description: 'Message templates and generator',                       sheetTab: '' },
+    { id: 'salesPipeline',  label: 'Sales Pipeline',     icon: 'briefcase', visible: true,  order: 5, description: 'Deals and sales stages',                              sheetTab: 'Prime_Pipeline' },
+    { id: 'brandCommunity', label: 'Brand / Community',  icon: 'sprout', visible: true,  order: 6, description: 'Manage your brand, community, or apparel-related work.', sheetTab: 'SCC_Content' },
+    { id: 'productsOrders', label: 'Products / Orders',  icon: 'package', visible: true,  order: 7, description: 'Manage product leads, orders, and customer follow-ups.', sheetTab: 'Calmera_Orders' },
+    { id: 'content',        label: 'Content',            icon: 'file-text', visible: true,  order: 8, description: 'Content ideas and repurposing',                        sheetTab: 'Repurpose_Outputs' },
+    { id: 'settings',       label: 'Settings',           icon: 'settings-icon', visible: true,  order: 9, description: 'Customize your workspace',                            sheetTab: '' },
   ],
   categories: [
     { id: 'consulting',     label: 'Consulting',         color: '#6366f1', description: 'Consulting and sales prospects' },
@@ -110,6 +110,30 @@ class SettingsEngine {
       if (raw) {
         const parsed = JSON.parse(raw);
         this._cache = this._deepMerge(DEFAULT_SETTINGS, parsed);
+        
+        // Migrate emoji icons in localStorage to vector icons
+        const emojiMap = {
+          '🏠': 'home',
+          '📅': 'calendar',
+          '👤': 'user',
+          '💬': 'message-square',
+          '💼': 'briefcase',
+          '🌿': 'sprout',
+          '📦': 'package',
+          '📝': 'file-text',
+          '⚙️': 'settings-icon'
+        };
+        let modified = false;
+        this._cache.modules.forEach(m => {
+          if (emojiMap[m.icon]) {
+            m.icon = emojiMap[m.icon];
+            modified = true;
+          }
+        });
+        if (modified) {
+          this.save(this._cache);
+        }
+
         // Ensure all default modules exist (handles upgrades)
         DEFAULT_SETTINGS.modules.forEach(defMod => {
           if (!this._cache.modules.find(m => m.id === defMod.id)) {
