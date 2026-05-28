@@ -45,10 +45,9 @@ class GeloGrowthOS {
     this._calTypeFilter = 'all';
     this._calPriorityFilter = 'all';
     this._calStatusFilter = 'all';
-    this._settingsTab   = 'workspace';
-    this._msgType       = 'follow-up';
     this._msgTone       = 'warm';
     this._currentMessage = null;
+    this._sidebarCollapsed = localStorage.getItem('gos_sidebar_collapsed') === 'true';
 
     // Init
     this.loadData();
@@ -73,8 +72,42 @@ class GeloGrowthOS {
     // Set initial page title
     document.getElementById('page-title').textContent = settingsEngine.getWorkspaceName();
 
+    // Apply sidebar state
+    this.applySidebarState();
+
     // Render the first view
     this.render();
+  }
+
+  // ── Sidebar Toggle Helpers ──────────────────────────────────
+  applySidebarState() {
+    const sidebar = document.getElementById('sidebar');
+    const appEl = document.getElementById('app');
+    const toggleBtn = document.getElementById('btn-sidebar-toggle');
+
+    if (this._sidebarCollapsed) {
+      if (sidebar) sidebar.classList.add('collapsed');
+      if (appEl) appEl.classList.add('sidebar-collapsed');
+      if (toggleBtn) {
+        toggleBtn.innerHTML = '◨';
+        toggleBtn.title = 'Expand sidebar';
+        toggleBtn.setAttribute('aria-label', 'Expand sidebar');
+      }
+    } else {
+      if (sidebar) sidebar.classList.remove('collapsed');
+      if (appEl) appEl.classList.remove('sidebar-collapsed');
+      if (toggleBtn) {
+        toggleBtn.innerHTML = '◧';
+        toggleBtn.title = 'Collapse sidebar';
+        toggleBtn.setAttribute('aria-label', 'Collapse sidebar');
+      }
+    }
+  }
+
+  toggleSidebar() {
+    this._sidebarCollapsed = !this._sidebarCollapsed;
+    localStorage.setItem('gos_sidebar_collapsed', this._sidebarCollapsed);
+    this.applySidebarState();
   }
 
   // ── Build Navigation from Settings ──────────────────────────
@@ -88,7 +121,8 @@ class GeloGrowthOS {
       nav.innerHTML = modules.map(mod => `
         <button class="gos-nav-item ${this.currentModule === mod.id ? 'active' : ''}" 
                 data-module="${mod.id}"
-                onclick="app.navigateTo('${mod.id}')">
+                onclick="app.navigateTo('${mod.id}')"
+                title="${mod.label}">
           <span class="nav-item-icon">${mod.icon}</span>
           <span class="nav-item-label">${mod.label}</span>
           ${mod.id === 'today' ? '<span class="nav-item-badge" id="nav-badge-overdue" style="display:none">0</span>' : ''}
