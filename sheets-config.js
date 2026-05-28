@@ -97,22 +97,78 @@ const NUMBER_FIELDS = new Set([
   'orderAmount', 'views', 'comments', 'saves', 'replies', 'engagements', 'leadsGenerated',
 ]);
 
-// Tab name → JS collection key mapping
-const TAB_KEY_MAP = {
-  'Contacts': 'contacts',
-  'Organizations': 'organizations',
-  'LinkedIn_Leads': 'linkedinLeads',
-  'Prime_Pipeline': 'primePipeline',
-  'SCC_Content': 'sccContent',
-  'Calmera_Orders': 'calmeraOrders',
-  'Source_Assets': 'sourceAssets',
-  'Repurpose_Outputs': 'repurposeOutputs',
-  'Interactions': 'interactions',
-  'Tasks': 'tasks',
-};
+// Dynamic Tab name ↔ JS collection key mapping
+function resolveTabToJsKey(tabName) {
+  if (typeof settingsEngine !== 'undefined') {
+    const mappings = settingsEngine.get().sheets.tabMappings;
+    const modIdToJsKey = {
+      leads:          'linkedinLeads',
+      salesPipeline:  'primePipeline',
+      brandCommunity: 'sccContent',
+      productsOrders: 'calmeraOrders',
+      content:        'repurposeOutputs',
+      contacts:       'contacts',
+      organizations:  'organizations',
+    };
+    
+    for (const [modId, customTabName] of Object.entries(mappings)) {
+      if (customTabName === tabName) {
+        return modIdToJsKey[modId] || modId;
+      }
+    }
+  }
+  
+  const defaultTabKeyMap = {
+    'Contacts': 'contacts',
+    'Organizations': 'organizations',
+    'LinkedIn_Leads': 'linkedinLeads',
+    'Prime_Pipeline': 'primePipeline',
+    'SCC_Content': 'sccContent',
+    'Calmera_Orders': 'calmeraOrders',
+    'Source_Assets': 'sourceAssets',
+    'Repurpose_Outputs': 'repurposeOutputs',
+    'Interactions': 'interactions',
+    'Tasks': 'tasks',
+    'Calendar': 'tasks',
+  };
+  
+  return defaultTabKeyMap[tabName] || tabName;
+}
 
-const JS_KEY_TO_TAB = {};
-Object.entries(TAB_KEY_MAP).forEach(([tab, key]) => { JS_KEY_TO_TAB[key] = tab; });
+function resolveJsKeyToTab(jsKey) {
+  if (typeof settingsEngine !== 'undefined') {
+    const mappings = settingsEngine.get().sheets.tabMappings;
+    const jsKeyToModId = {
+      contacts: 'contacts',
+      organizations: 'organizations',
+      linkedinLeads: 'leads',
+      primePipeline: 'salesPipeline',
+      sccContent: 'brandCommunity',
+      calmeraOrders: 'productsOrders',
+      repurposeOutputs: 'content',
+    };
+    
+    const modId = jsKeyToModId[jsKey];
+    if (modId && mappings[modId]) {
+      return mappings[modId];
+    }
+  }
+  
+  const defaultJsToTab = {
+    contacts: 'Contacts',
+    organizations: 'Organizations',
+    linkedinLeads: 'LinkedIn_Leads',
+    primePipeline: 'Prime_Pipeline',
+    sccContent: 'SCC_Content',
+    calmeraOrders: 'Calmera_Orders',
+    sourceAssets: 'Source_Assets',
+    repurposeOutputs: 'Repurpose_Outputs',
+    interactions: 'Interactions',
+    tasks: 'Tasks',
+  };
+  
+  return defaultJsToTab[jsKey] || jsKey;
+}
 
 
 // ============================================================
@@ -124,7 +180,7 @@ class SheetsService {
   }
 
   isConfigured() {
-    return !!(SHEETS_CONFIG.WEBAPP_URL);
+    return !!(settingsEngine.getWebAppUrl());
   }
 
   // ── Test Connection ───────────────────────────────────────
@@ -132,7 +188,7 @@ class SheetsService {
     if (!this.isConfigured()) return false;
 
     try {
-      const url = `${SHEETS_CONFIG.WEBAPP_URL}?action=ping`;
+      const url = `${settingsEngine.getWebAppUrl()}?action=ping`;
       const response = await fetch(url);
       const data = await response.json();
       return data.status === 'ok';
@@ -144,7 +200,7 @@ class SheetsService {
 
   // ── Read All Data ─────────────────────────────────────────
   async readAllData() {
-    const url = `${SHEETS_CONFIG.WEBAPP_URL}?action=readAll`;
+    const url = `${settingsEngine.getWebAppUrl()}?action=readAll`;
     const response = await fetch(url);
 
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -155,7 +211,7 @@ class SheetsService {
     // Transform: snake_case → camelCase + parse numbers + denormalize
     const data = {};
     Object.entries(rawData).forEach(([tabName, rows]) => {
-      const jsKey = TAB_KEY_MAP[tabName];
+      const jsKey = resolveTabToJsKey(tabName);
       if (!jsKey) return;
 
       data[jsKey] = rows.map((row, index) => {
@@ -185,7 +241,7 @@ class SheetsService {
 
   // ── Write Record ──────────────────────────────────────────
   async appendRecord(jsKey, record) {
-    const tabName = JS_KEY_TO_TAB[jsKey];
+    const tabName = resolveJsKeyToTab(jsKey);
     if (!tabName) throw new Error(`Unknown collection: ${jsKey}`);
 
     // Convert camelCase → snake_case for the sheet
@@ -198,7 +254,7 @@ class SheetsService {
       else sheetRow[col] = val;
     });
 
-    const response = await fetch(SHEETS_CONFIG.WEBAPP_URL, {
+    const response = await fetch(settingsEngine.getWebAppUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ action: 'append', tab: tabName, data: sheetRow }),
@@ -211,7 +267,7 @@ class SheetsService {
 
   // ── Update Record ─────────────────────────────────────────
   async updateRecord(jsKey, rowIndex, record) {
-    const tabName = JS_KEY_TO_TAB[jsKey];
+    const tabName = resolveJsKeyToTab(jsKey);
     if (!tabName) throw new Error(`Unknown collection: ${jsKey}`);
 
     const sheetRow = {};
@@ -223,7 +279,7 @@ class SheetsService {
       else sheetRow[col] = val;
     });
 
-    const response = await fetch(SHEETS_CONFIG.WEBAPP_URL, {
+    const response = await fetch(settingsEngine.getWebAppUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ action: 'update', tab: tabName, data: sheetRow, rowIndex }),
@@ -236,10 +292,10 @@ class SheetsService {
 
   // ── Delete Record ─────────────────────────────────────────
   async deleteRecord(jsKey, rowIndex) {
-    const tabName = JS_KEY_TO_TAB[jsKey];
+    const tabName = resolveJsKeyToTab(jsKey);
     if (!tabName) throw new Error(`Unknown collection: ${jsKey}`);
 
-    const response = await fetch(SHEETS_CONFIG.WEBAPP_URL, {
+    const response = await fetch(settingsEngine.getWebAppUrl(), {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ action: 'delete', tab: tabName, rowIndex }),

@@ -1,23 +1,241 @@
 // ============================================================
-// Gelo Growth OS — Core Application
+// Gelo Growth OS — Core Application v2
 // State management, rendering, filtering, scoring, CRUD
+// + Settings Engine, new views, mobile-first navigation
 // ============================================================
+
+// Module ID → internal view type mapping (keeps all existing logic intact)
+const MODULE_TO_VIEW = {
+  today:          'command-center',
+  calendar:       'calendar',
+  leads:          'linkedin',
+  messages:       'messages',
+  salesPipeline:  'prime',
+  brandCommunity: 'scc',
+  productsOrders: 'calmera',
+  content:        'repurposing',
+  settings:       'settings',
+};
+const VIEW_TO_MODULE = Object.fromEntries(Object.entries(MODULE_TO_VIEW).map(([k,v]) => [v,k]));
+
+// Bottom-nav primary modules (always visible)
+const BOTTOM_NAV_MODULES = ['today', 'calendar', 'leads', 'messages'];
+// Modules that go in the "More" drawer
+const DRAWER_MODULES = ['salesPipeline', 'brandCommunity', 'productsOrders', 'content', 'settings'];
 
 class GeloGrowthOS {
   constructor() {
     // State
-    this.currentView = 'command-center';
-    this.data = null;
-    this.filteredData = null;
-    this.filters = { status: 'all', priority: 'all', search: '' };
+    this.currentView    = 'command-center';
+    this.currentModule  = 'today';
+    this.data           = null;
+    this.filteredData   = null;
+    this.filters        = { status: 'all', priority: 'all', search: '' };
     this.selectedRecord = null;
     this.sheetsConnected = false;
-    this.sortConfig = { key: null, direction: 'asc' };
+    this.sortConfig     = { key: null, direction: 'asc' };
+    this.confirmCallback = null;
+    this._calendarDate  = new Date();
+    this._calendarViewMode = 'list'; // list | month
+    this._settingsTab   = 'workspace';
+    this._msgType       = 'follow-up';
+    this._msgTone       = 'warm';
+    this._currentMessage = null;
 
     // Init
     this.loadData();
     this.bindEvents();
+    this._initApp();
+  }
+
+  // ── App Initialization ───────────────────────────────────────
+  _initApp() {
+    // Apply saved theme immediately
+    settingsEngine.applyTheme();
+
+    // Build navigation from settings
+    this.buildNavigation();
+
+    // Update profile in sidebar
+    this.updateSidebarProfile();
+
+    // Update app name
+    this.updateAppName();
+
+    // Set initial page title
+    document.getElementById('page-title').textContent = settingsEngine.getWorkspaceName();
+
+    // Render the first view
     this.render();
+  }
+
+  // ── Build Navigation from Settings ──────────────────────────
+  buildNavigation() {
+    const settings = settingsEngine.get();
+    const modules  = settingsEngine.getVisibleModules();
+
+    // Build sidebar nav
+    const nav = document.getElementById('sidebar-nav');
+    if (nav) {
+      nav.innerHTML = modules.map(mod => `
+        <button class="gos-nav-item ${this.currentModule === mod.id ? 'active' : ''}" 
+                data-module="${mod.id}"
+                onclick="app.navigateTo('${mod.id}')">
+          <span class="nav-item-icon">${mod.icon}</span>
+          <span class="nav-item-label">${mod.label}</span>
+          ${mod.id === 'today' ? '<span class="nav-item-badge" id="nav-badge-overdue" style="display:none">0</span>' : ''}
+        </button>
+      `).join('');
+    }
+
+    // Build mobile bottom-nav labels dynamically
+    BOTTOM_NAV_MODULES.forEach(moduleId => {
+      const mod = settings.modules.find(m => m.id === moduleId);
+      if (!mod) return;
+      const label = document.getElementById(`mob-label-${moduleId}`);
+      if (label) label.textContent = mod.label;
+    });
+
+    // Build "More" drawer nav
+    const drawer = document.getElementById('drawer-nav');
+    if (drawer) {
+      const drawerMods = modules.filter(m => DRAWER_MODULES.includes(m.id));
+      drawer.innerHTML = drawerMods.map(mod => `
+        <button class="drawer-nav-item ${this.currentModule === mod.id ? 'active' : ''}"
+                data-module="${mod.id}"
+                onclick="app.navigateTo('${mod.id}'); app.closeMoreDrawer();">
+          <span class="drawer-nav-icon">${mod.icon}</span>
+          <span>${mod.label}</span>
+        </button>
+      `).join('');
+    }
+  }
+
+  // ── Update Sidebar Profile ───────────────────────────────────
+  updateSidebarProfile() {
+    const p = settingsEngine.getProfile();
+    const el = (id) => document.getElementById(id);
+    if (el('sidebar-avatar')) el('sidebar-avatar').textContent = p.avatarInitials || 'GV';
+    if (el('sidebar-name'))   el('sidebar-name').textContent   = p.displayName   || 'Gelo';
+    if (el('sidebar-company')) el('sidebar-company').textContent = `${p.company || ''} · ${p.role || ''}`;
+  }
+
+  // ── Update App Name ──────────────────────────────────────────
+  updateAppName() {
+    const name = settingsEngine.getWorkspaceName();
+    const el = document.getElementById('sidebar-app-name');
+    if (el) el.textContent = name;
+    document.getElementById('page-title').textContent = name;
+  }
+
+  // ── Primary Navigation ───────────────────────────────────────
+  navigateTo(moduleId) {
+    // Determine internal view type
+    const viewType = MODULE_TO_VIEW[moduleId] || moduleId;
+    this.currentModule = moduleId;
+    this.currentView   = viewType;
+    this.filters = { status: 'all', priority: 'all', search: '' };
+    this.sortConfig = { key: null, direction: 'asc' };
+
+    // Update nav active states
+    this._updateActiveNav(moduleId);
+
+    // Update topbar
+    this.updateTopbar();
+
+    // Update filter options
+    this.updateFilterOptions();
+
+    // Apply filters and render
+    this.applyFilters();
+    this.renderContent();
+
+    // Reset search input
+    const searchInput = document.getElementById('global-search');
+    if (searchInput) searchInput.value = '';
+
+    // Reset filter dropdown
+    const statusFilter = document.getElementById('filter-status');
+    if (statusFilter) statusFilter.value = 'all';
+
+    // Close any open overlays
+    this.closeMoreDrawer();
+    this.closeMobileSidebar();
+  }
+
+  _updateActiveNav(moduleId) {
+    // Sidebar nav items
+    document.querySelectorAll('.gos-nav-item[data-module]').forEach(item => {
+      item.classList.toggle('active', item.dataset.module === moduleId);
+    });
+    // Bottom nav buttons
+    document.querySelectorAll('.mobile-nav-btn[data-module]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.module === moduleId);
+    });
+    // Drawer nav items
+    document.querySelectorAll('.drawer-nav-item[data-module]').forEach(item => {
+      item.classList.toggle('active', item.dataset.module === moduleId);
+    });
+  }
+
+  // ── Mobile Sidebar ───────────────────────────────────────────
+  openMobileSidebar() {
+    document.getElementById('sidebar')?.classList.add('sidebar-open');
+    document.getElementById('sidebar-overlay')?.classList.add('active');
+  }
+
+  closeMobileSidebar() {
+    document.getElementById('sidebar')?.classList.remove('sidebar-open');
+    document.getElementById('sidebar-overlay')?.classList.remove('active');
+  }
+
+  // ── More Drawer ──────────────────────────────────────────────
+  openMoreDrawer() {
+    document.getElementById('mobile-drawer')?.classList.add('open');
+    document.getElementById('drawer-backdrop').style.display = 'block';
+  }
+
+  closeMoreDrawer() {
+    document.getElementById('mobile-drawer')?.classList.remove('open');
+    const bd = document.getElementById('drawer-backdrop');
+    if (bd) bd.style.display = 'none';
+  }
+
+  // ── Theme Toggle ────────────────────────────────────────────
+  toggleTheme() {
+    const newTheme = settingsEngine.toggleTheme();
+    this.showToast(`Switched to ${newTheme} mode`, 'success');
+  }
+
+  // ── Handle search (replaces previous event listener approach) 
+  handleSearch(value) {
+    this.filters.search = value.toLowerCase();
+    this.applyFilters();
+    this.renderContent();
+  }
+
+  // ── Handle filter status dropdown
+  handleFilterStatus(value) {
+    this.filters.status = value;
+    this.applyFilters();
+    this.renderContent();
+  }
+
+  // ── Confirm Dialog ───────────────────────────────────────────
+  showConfirm(title, message, btnLabel, callback) {
+    this.confirmCallback = callback;
+    document.getElementById('confirm-title').textContent = title;
+    document.getElementById('confirm-message').textContent = message;
+    document.getElementById('confirm-action-btn').textContent = btnLabel || 'Confirm';
+    document.getElementById('confirm-modal-overlay').style.display = 'flex';
+  }
+  executeConfirm() {
+    document.getElementById('confirm-modal-overlay').style.display = 'none';
+    if (this.confirmCallback) { this.confirmCallback(); this.confirmCallback = null; }
+  }
+  cancelConfirm() {
+    document.getElementById('confirm-modal-overlay').style.display = 'none';
+    this.confirmCallback = null;
   }
 
   // ── Data Loading ────────────────────────────────────────────
@@ -29,94 +247,25 @@ class GeloGrowthOS {
 
   // ── Event Binding ───────────────────────────────────────────
   bindEvents() {
-    // Navigation
-    document.querySelectorAll('.gos-nav-item').forEach(item => {
-      item.addEventListener('click', (e) => {
-        e.preventDefault();
-        this.switchView(item.dataset.view);
-      });
-    });
-
-    // Filters
-    document.getElementById('filter-status')?.addEventListener('change', (e) => {
-      this.filters.status = e.target.value;
-      this.applyFilters();
-      this.renderContent();
-    });
-
-    document.getElementById('filter-priority')?.addEventListener('change', (e) => {
-      this.filters.priority = e.target.value;
-      this.applyFilters();
-      this.renderContent();
-    });
-
-    document.getElementById('global-search')?.addEventListener('input', (e) => {
-      this.filters.search = e.target.value.toLowerCase();
-      this.applyFilters();
-      this.renderContent();
-    });
-
-    // Add record button
-    document.getElementById('btn-add-record')?.addEventListener('click', () => {
-      this.openAddModal();
-    });
-
-    // Message generator button
-    document.getElementById('btn-message-gen')?.addEventListener('click', () => {
-      this.openMessageGenerator();
-    });
-
-    // Panel close
-    document.getElementById('panel-close')?.addEventListener('click', () => this.closePanel());
-    document.getElementById('panel-overlay')?.addEventListener('click', () => this.closePanel());
-
-    // Modal close
-    document.getElementById('modal-close')?.addEventListener('click', () => this.closeModal('add-modal'));
-    document.getElementById('add-modal-overlay')?.addEventListener('click', (e) => {
-      if (e.target.id === 'add-modal-overlay') this.closeModal('add-modal');
-    });
-    document.getElementById('msg-modal-close')?.addEventListener('click', () => this.closeModal('msg-modal'));
-    document.getElementById('msg-modal-overlay')?.addEventListener('click', (e) => {
-      if (e.target.id === 'msg-modal-overlay') this.closeModal('msg-modal');
-    });
-
-    // Add form submit
-    document.getElementById('add-form')?.addEventListener('submit', (e) => {
-      e.preventDefault();
-      this.handleAddRecord();
-    });
-
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         this.closePanel();
         this.closeModal('add-modal');
         this.closeModal('msg-modal');
+        this.closeMobileSidebar();
+        this.closeMoreDrawer();
       }
     });
   }
 
-  // ── View Switching ──────────────────────────────────────────
+  // ── View Switching (legacy support — use navigateTo() for new code) ─
   switchView(view) {
-    this.currentView = view;
-    this.filters = { status: 'all', priority: 'all', search: '' };
-
-    // Update nav
-    document.querySelectorAll('.gos-nav-item').forEach(item => {
-      item.classList.toggle('active', item.dataset.view === view);
-    });
-
-    // Reset filters UI
-    const statusFilter = document.getElementById('filter-status');
-    const priorityFilter = document.getElementById('filter-priority');
-    const searchInput = document.getElementById('global-search');
-    if (statusFilter) statusFilter.value = 'all';
-    if (priorityFilter) priorityFilter.value = 'all';
-    if (searchInput) searchInput.value = '';
-
-    this.updateFilterOptions();
-    this.applyFilters();
-    this.render();
+    // If given a module ID, delegate to navigateTo
+    if (MODULE_TO_VIEW[view]) { this.navigateTo(view); return; }
+    // If given an internal view type, find the module and navigate
+    const moduleId = VIEW_TO_MODULE[view] || view;
+    this.navigateTo(moduleId);
   }
 
   // ── Filter Options per View ─────────────────────────────────
@@ -219,35 +368,64 @@ class GeloGrowthOS {
   }
 
   updateTopbar() {
-    const titles = {
-      'command-center': ['Daily Command Center', 'Your daily action hub — overdue, due today, and upcoming tasks'],
-      'linkedin': ['LinkedIn Lead Funnel', 'Capture, qualify, nurture, and convert LinkedIn connections'],
-      'prime': ['Prime Consultancy Pipeline', 'Track opportunities from inquiry to won/lost'],
-      'scc': ['Self Care Club Content', 'Plan, create, and publish community content'],
-      'calmera': ['Calmera Reconfirmation Desk', 'Confirm orders before fulfillment cutoff'],
-      'repurposing': ['Content Repurposing Engine', 'Turn source assets into multi-channel derivatives'],
+    const settings  = settingsEngine.get();
+    const profile   = settings.profile;
+    const modules   = settings.modules;
+
+    // Build title from module label
+    const mod = modules.find(m => m.id === this.currentModule) || {};
+    const defaultSubtitles = {
+      today:          `Good ${this._getTimeOfDay()}, ${profile.displayName}! Here's your daily action plan.`,
+      calendar:       'Your upcoming calls, follow-ups, and scheduled tasks',
+      leads:          'Capture, qualify, nurture, and convert your leads',
+      messages:       'Generate and copy messages for any lead or stage',
+      salesPipeline:  'Track opportunities from inquiry to closed deal',
+      brandCommunity: 'Plan, create, and publish community content',
+      productsOrders: 'Manage product leads, orders, and customer reconfirmations',
+      content:        'Turn source assets into multi-channel content',
+      settings:       'Customize your Growth OS workspace',
     };
 
-    const [title, subtitle] = titles[this.currentView] || ['Dashboard', ''];
-    document.getElementById('view-title').textContent = title;
-    document.getElementById('view-subtitle').textContent = subtitle;
+    const title    = mod.label || 'Dashboard';
+    const subtitle = defaultSubtitles[this.currentModule] || mod.description || '';
+
+    const titleEl    = document.getElementById('view-title');
+    const subtitleEl = document.getElementById('view-subtitle');
+    if (titleEl)    titleEl.textContent    = title;
+    if (subtitleEl) subtitleEl.textContent = subtitle;
+  }
+
+  _getTimeOfDay() {
+    const h = new Date().getHours();
+    if (h < 12) return 'morning';
+    if (h < 17) return 'afternoon';
+    return 'evening';
   }
 
   renderContent() {
     const content = document.getElementById('main-content');
     if (!content) return;
 
+    content.className = 'gos-content animate-fade-in';
+
     switch (this.currentView) {
-      case 'command-center': this.renderCommandCenter(content); break;
-      case 'linkedin': this.renderLinkedIn(content); break;
-      case 'prime': this.renderPrime(content); break;
-      case 'scc': this.renderSCC(content); break;
-      case 'calmera': this.renderCalmera(content); break;
-      case 'repurposing': this.renderRepurposing(content); break;
+      case 'command-center': this.renderToday(content); break;
+      case 'calendar':       this.renderCalendar(content); break;
+      case 'linkedin':       this.renderLinkedIn(content); break;
+      case 'messages':       this.renderMessagesPage(content); break;
+      case 'prime':          this.renderPrime(content); break;
+      case 'scc':            this.renderSCC(content); break;
+      case 'calmera':        this.renderCalmera(content); break;
+      case 'repurposing':    this.renderRepurposing(content); break;
+      case 'settings':       this.renderSettings(content); break;
+      default:               this.renderToday(content);
     }
   }
 
-  // ── Command Center ──────────────────────────────────────────
+  // ── Today / Command Center ──────────────────────────────────
+  renderToday(container) { this.renderCommandCenter(container); }
+
+  // ── Legacy Command Center (kept for compatibility) ───────────
   renderCommandCenter(container) {
     const tasks = this.data.tasks;
     const openTasks = tasks.filter(t => t.status !== 'Completed' && t.status !== 'Cancelled');
@@ -349,8 +527,8 @@ class GeloGrowthOS {
 
         <div class="gos-section-card">
           <div class="gos-section-card-header">
-            <span class="gos-section-card-title">🔗 LinkedIn Lead Funnel</span>
-            <button class="gos-btn gos-btn-ghost gos-btn-sm" onclick="app.switchView('linkedin')">View All →</button>
+            <span class="gos-section-card-title">👤 ${settingsEngine.getModuleLabel('leads')} Funnel</span>
+            <button class="gos-btn gos-btn-ghost gos-btn-sm" onclick="app.navigateTo('leads')">View All →</button>
           </div>
           <div class="gos-section-card-body">
             ${this.renderFunnel(leads, ['New', 'Qualified', 'Contacted', 'Nurturing', 'Converted'])}
@@ -359,8 +537,8 @@ class GeloGrowthOS {
 
         <div class="gos-section-card">
           <div class="gos-section-card-header">
-            <span class="gos-section-card-title">💼 Prime Pipeline</span>
-            <button class="gos-btn gos-btn-ghost gos-btn-sm" onclick="app.switchView('prime')">View All →</button>
+            <span class="gos-section-card-title">💼 ${settingsEngine.getModuleLabel('salesPipeline')}</span>
+            <button class="gos-btn gos-btn-ghost gos-btn-sm" onclick="app.navigateTo('salesPipeline')">View All →</button>
           </div>
           <div class="gos-section-card-body">
             ${this.renderFunnel(pipeline, ['New Inquiry', 'Discovery', 'Proposal Sent', 'Negotiation', 'Won'], 'stage')}
@@ -369,8 +547,8 @@ class GeloGrowthOS {
 
         <div class="gos-section-card">
           <div class="gos-section-card-header">
-            <span class="gos-section-card-title">📦 Calmera Order Alerts</span>
-            <button class="gos-btn gos-btn-ghost gos-btn-sm" onclick="app.switchView('calmera')">View All →</button>
+            <span class="gos-section-card-title">📦 ${settingsEngine.getModuleLabel('productsOrders')} Alerts</span>
+            <button class="gos-btn gos-btn-ghost gos-btn-sm" onclick="app.navigateTo('productsOrders')">View All →</button>
           </div>
           <div class="gos-section-card-body">
             <ul class="gos-task-list">
@@ -790,12 +968,13 @@ class GeloGrowthOS {
 
   // ── Score Renderer ──────────────────────────────────────────
   renderScore(score) {
-    const level = score >= 75 ? 'high' : score >= 50 ? 'medium' : 'low';
+    const s = score || 0;
+    const level = s >= 75 ? 'high' : s >= 50 ? 'medium' : 'low';
     return `
       <div class="gos-score score-${level}">
-        <span>${score}</span>
-        <div class="gos-score-bar">
-          <div class="gos-score-fill" style="width: ${score}%"></div>
+        <span class="score-num">${s}</span>
+        <div class="score-bar-bg">
+          <div class="score-bar-fill" style="width:${s}%"></div>
         </div>
       </div>
     `;
@@ -846,28 +1025,28 @@ class GeloGrowthOS {
 
     this.selectedRecord = { viewType, record };
 
-    const panel = document.getElementById('detail-panel');
-    const overlay = document.getElementById('panel-overlay');
-    const panelTitle = document.getElementById('panel-title');
-    const panelBody = document.getElementById('panel-body');
+    const panel       = document.getElementById('detail-panel');
+    const panelTitle  = document.getElementById('panel-title');
+    const panelBody   = document.getElementById('panel-body');
     const panelFooter = document.getElementById('panel-footer');
+    const backdrop    = document.getElementById('panel-backdrop');
 
-    panelTitle.textContent = this.getRecordTitle(viewType, record);
-    panelBody.innerHTML = this.renderRecordDetail(viewType, record);
+    panelTitle.textContent   = this.getRecordTitle(viewType, record);
+    panelBody.innerHTML      = this.renderRecordDetail(viewType, record);
 
     if (panelFooter) {
       const idFieldName = Object.keys(record).find(k => k.endsWith('Id') && k !== 'contactId' && k !== 'organizationId' && k !== 'sourceLeadId') || 'id';
       const idVal = record[idFieldName];
       panelFooter.innerHTML = `
-        <button class="gos-btn gos-btn-secondary" onclick="app.closePanel()">Close</button>
-        <button class="gos-btn gos-btn-danger" onclick="app.deleteSelectedRecord()" style="margin-right:auto">🗑️ Delete</button>
-        <button class="gos-btn gos-btn-ghost" onclick="app.editSelectedRecord()">✏️ Edit Details</button>
-        <button class="gos-btn gos-btn-primary" onclick="app.openMessageForRecord('${viewType}', '${idVal}')">✉️ Generate Message</button>
+        <button class="btn-secondary btn-sm" onclick="app.closePanel()">Close</button>
+        <button class="btn-danger btn-sm" onclick="app.deleteSelectedRecord()" style="margin-right:auto">🗑️ Delete</button>
+        <button class="btn-ghost btn-sm" onclick="app.editSelectedRecord()">✏️ Edit</button>
+        <button class="btn-primary btn-sm" onclick="app.openMessageForRecord('${viewType}', '${idVal}')">✉️ Message</button>
       `;
     }
 
     panel.classList.add('open');
-    overlay.classList.add('open');
+    if (backdrop) backdrop.style.display = 'block';
   }
 
   openTaskPanel(taskId) {
@@ -954,7 +1133,8 @@ class GeloGrowthOS {
 
   closePanel() {
     document.getElementById('detail-panel')?.classList.remove('open');
-    document.getElementById('panel-overlay')?.classList.remove('open');
+    const bd = document.getElementById('panel-backdrop');
+    if (bd) bd.style.display = 'none';
     this.selectedRecord = null;
   }
 
@@ -972,8 +1152,8 @@ class GeloGrowthOS {
     // Swap footer to Save/Cancel actions
     if (panelFooter) {
       panelFooter.innerHTML = `
-        <button class="gos-btn gos-btn-secondary" onclick="app.cancelRecordEdit()">Cancel</button>
-        <button class="gos-btn gos-btn-primary" onclick="app.saveRecordEdit()">💾 Save Changes</button>
+        <button class="btn-secondary btn-sm" onclick="app.cancelRecordEdit()">Cancel</button>
+        <button class="btn-primary btn-sm" onclick="app.saveRecordEdit()">💾 Save Changes</button>
       `;
     }
   }
@@ -1287,16 +1467,24 @@ class GeloGrowthOS {
   async deleteSelectedRecord() {
     if (!this.selectedRecord) return;
     const { viewType, record } = this.selectedRecord;
+    const label = viewType === 'linkedin' ? 'lead' : viewType === 'prime' ? 'opportunity' : 'record';
 
-    const confirmMsg = `Are you sure you want to permanently delete this ${viewType === 'linkedin' ? 'lead' : viewType === 'prime' ? 'opportunity' : 'record'}?\n\nThis will remove it from the dashboard and delete its row in your Google Sheet!`;
-    if (!confirm(confirmMsg)) return;
+    this.showConfirm(
+      'Delete Record',
+      `Are you sure you want to permanently delete this ${label}? This will also delete its row in Google Sheets.`,
+      '🗑️ Delete',
+      () => this._doDeleteRecord(viewType, record)
+    );
+  }
+
+  async _doDeleteRecord(viewType, record) {
 
     const dataMap = {
-      'linkedin': { data: this.data.linkedinLeads, idKey: 'leadId', tabKey: 'linkedinLeads' },
-      'prime': { data: this.data.primePipeline, idKey: 'opportunityId', tabKey: 'primePipeline' },
-      'scc': { data: this.data.sccContent, idKey: 'contentId', tabKey: 'sccContent' },
-      'calmera': { data: this.data.calmeraOrders, idKey: 'orderId', tabKey: 'calmeraOrders' },
-      'repurposing': { data: this.data.repurposeOutputs, idKey: 'outputId', tabKey: 'repurposeOutputs' },
+      'linkedin':   { data: this.data.linkedinLeads, idKey: 'leadId', tabKey: 'linkedinLeads' },
+      'prime':      { data: this.data.primePipeline, idKey: 'opportunityId', tabKey: 'primePipeline' },
+      'scc':        { data: this.data.sccContent, idKey: 'contentId', tabKey: 'sccContent' },
+      'calmera':    { data: this.data.calmeraOrders, idKey: 'orderId', tabKey: 'calmeraOrders' },
+      'repurposing':{ data: this.data.repurposeOutputs, idKey: 'outputId', tabKey: 'repurposeOutputs' },
     };
 
     const config = dataMap[viewType];
@@ -1305,34 +1493,23 @@ class GeloGrowthOS {
     const rowIndex = record._rowIndex;
     const recordId = record[config.idKey];
 
-    // Remove from local array
     const index = config.data.findIndex(r => r[config.idKey] === recordId);
-    if (index !== -1) {
-      config.data.splice(index, 1);
-    }
+    if (index !== -1) config.data.splice(index, 1);
 
-    // Shift row indices of other records in the same collection
     config.data.forEach(r => {
-      if (r._rowIndex !== undefined && r._rowIndex > rowIndex) {
-        r._rowIndex--;
-      }
+      if (r._rowIndex !== undefined && r._rowIndex > rowIndex) r._rowIndex--;
     });
 
-    // Close details panel immediately
     this.closePanel();
-
-    // Re-render
     this.applyFilters();
     this.render();
     this.showToast('Record deleted locally!', 'success');
 
-    // Sync in background to Sheets (if connected)
     if (this.sheetsConnected && rowIndex !== undefined) {
       try {
         await sheetsService.deleteRecord(config.tabKey, rowIndex);
         this.showToast('🗑️ Deleted from Google Sheets', 'success');
       } catch (err) {
-        console.error('Sheet delete failed:', err);
         this.showToast('⚠️ Deleted locally, but Google Sheets delete failed.', 'warning');
       }
     }
@@ -1819,16 +1996,30 @@ class GeloGrowthOS {
 
   // ── Add Record Modal ────────────────────────────────────────
   openAddModal() {
-    const overlay = document.getElementById('add-modal-overlay');
-    const formBody = document.getElementById('add-form-body');
+    const overlay   = document.getElementById('add-modal-overlay');
+    const formFields = document.getElementById('add-form-fields');
+    const titleEl   = document.getElementById('add-modal-title');
 
-    formBody.innerHTML = this.getAddFormFields();
-    overlay.classList.add('open');
+    const viewTitles = {
+      linkedin:   'Add New Lead', prime:      'Add New Opportunity',
+      scc:        'Add New Content', calmera:  'Add New Order',
+      repurposing:'Add New Output',  settings: '',
+      'command-center': 'Add New Lead', calendar: 'Add New Lead',
+      messages:   'Add New Lead',
+    };
+    if (titleEl) titleEl.textContent = viewTitles[this.currentView] || 'Add New Record';
+    if (formFields) formFields.innerHTML = this.getAddFormFields();
+    if (overlay) overlay.style.display = 'flex';
   }
 
   closeModal(modalId) {
-    const id = modalId === 'add-modal' ? 'add-modal-overlay' : 'msg-modal-overlay';
-    document.getElementById(id)?.classList.remove('open');
+    if (modalId === 'add-modal') {
+      const el = document.getElementById('add-modal-overlay');
+      if (el) el.style.display = 'none';
+    } else {
+      const el = document.getElementById('msg-modal-overlay');
+      if (el) el.style.display = 'none';
+    }
   }
 
   getAddFormFields() {
@@ -2229,49 +2420,46 @@ class GeloGrowthOS {
   // ── Message Generator ───────────────────────────────────────
   openMessageGenerator() {
     const overlay = document.getElementById('msg-modal-overlay');
-    const body = document.getElementById('msg-body');
+    const body    = document.getElementById('msg-modal-body');
 
     const streamMap = {
-      'linkedin': 'linkedin',
-      'prime': 'prime',
-      'scc': 'scc',
-      'calmera': 'calmera',
-      'command-center': 'general',
-      'repurposing': 'general',
+      linkedin: 'linkedin', prime: 'prime', scc: 'scc', calmera: 'calmera',
+      'command-center': 'general', repurposing: 'general', messages: 'linkedin',
     };
-
-    const stream = streamMap[this.currentView] || 'general';
+    const stream    = streamMap[this.currentView] || 'general';
     const templates = MessageGenerator.getTemplates(stream);
     const categories = MessageGenerator.getCategories();
 
     body.innerHTML = `
-      <div class="gos-msg-gen">
-        <div class="gos-msg-gen-header">
-          <span>✉️</span>
-          <h3>Select Template</h3>
-          <select class="gos-filter" id="msg-category" style="margin-left:auto" onchange="app.switchMsgCategory(this.value)">
+      <div style="padding:20px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+          <span>Stream:</span>
+          <select class="gos-form-select" style="width:auto" id="msg-category" onchange="app.switchMsgCategory(this.value)">
             ${categories.map(c => `<option value="${c}" ${c === stream ? 'selected' : ''}>${c.charAt(0).toUpperCase() + c.slice(1)}</option>`).join('')}
           </select>
         </div>
-        <div class="gos-msg-template-grid" id="msg-templates">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:20px" id="msg-templates">
           ${templates.map(t => `
-            <div class="gos-msg-template-card" onclick="app.selectTemplate('${t.id}')" data-template-id="${t.id}">
-              <div class="gos-msg-template-name">${t.name}</div>
-              <div class="gos-msg-template-stage">${t.stage} · ${t.channel}</div>
+            <div style="background:var(--surface-alt);border:1px solid var(--border);border-radius:var(--radius);padding:14px;cursor:pointer;transition:border-color 0.15s" 
+                 onclick="app.selectTemplate('${t.id}')" data-template-id="${t.id}" 
+                 onmouseover="this.style.borderColor='var(--accent)'" onmouseout="if(!this.classList.contains('selected'))this.style.borderColor='var(--border)'">
+              <div style="font-weight:600;font-size:13px;color:var(--text-primary);margin-bottom:4px">${t.name}</div>
+              <div style="font-size:11px;color:var(--text-muted)">${t.stage} · ${t.channel}</div>
             </div>
           `).join('')}
         </div>
-        <div class="gos-msg-preview" id="msg-preview" style="display:none">
-          <div class="gos-msg-preview-subject" id="msg-preview-subject"></div>
-          <div class="gos-msg-preview-body" id="msg-preview-body"></div>
+        <div id="msg-preview" style="display:none">
+          <div id="msg-preview-subject" style="font-size:12px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px"></div>
+          <div class="message-preview-text" id="msg-preview-body"></div>
         </div>
-        <div class="gos-msg-actions" id="msg-actions" style="display:none">
-          <button class="gos-btn gos-btn-secondary" onclick="app.copyMessage()">📋 Copy to Clipboard</button>
+        <div id="msg-actions" style="display:none;gap:10px;margin-top:16px;flex-wrap:wrap">
+          <button class="btn-copy large" onclick="app.copyMessage()">📋 Copy to Clipboard</button>
+          <button class="btn-secondary" onclick="app.closeModal('msg-modal')">Close</button>
         </div>
       </div>
     `;
 
-    overlay.classList.add('open');
+    if (overlay) overlay.style.display = 'flex';
   }
 
   openMessageForRecord(viewType, id) {
@@ -2348,22 +2536,17 @@ class GeloGrowthOS {
   // ── Toast Notifications ─────────────────────────────────────
   showToast(message, type = 'info') {
     const container = document.getElementById('toast-container');
+    if (!container) return;
     const toast = document.createElement('div');
     toast.className = `gos-toast ${type}`;
-
     const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
     toast.innerHTML = `
-      <span class="gos-toast-icon">${icons[type]}</span>
-      <span class="gos-toast-msg">${message}</span>
-      <button class="gos-toast-close" onclick="this.parentElement.remove()">×</button>
+      <span class="toast-icon">${icons[type] || 'ℹ️'}</span>
+      <span class="toast-text">${message}</span>
+      <button style="background:none;border:none;color:var(--text-muted);cursor:pointer;padding:0 0 0 8px;font-size:16px;line-height:1" onclick="this.parentElement.remove()">×</button>
     `;
-
     container.appendChild(toast);
-
-    setTimeout(() => {
-      toast.classList.add('leaving');
-      setTimeout(() => toast.remove(), 300);
-    }, 3000);
+    setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; setTimeout(() => toast.remove(), 300); }, 3500);
   }
 
   // ── Helpers ─────────────────────────────────────────────────
@@ -2460,40 +2643,34 @@ class GeloGrowthOS {
   }
 
   updateConnectionUI(state) {
-    const demo = document.getElementById('status-demo');
-    const connected = document.getElementById('status-connected');
-    const loading = document.getElementById('status-loading');
-    const btnConnect = document.getElementById('btn-connect');
-    const btnDisconnect = document.getElementById('btn-disconnect');
-    const btnRefresh = document.getElementById('btn-refresh');
+    const dot      = document.getElementById('conn-dot');
+    const label    = document.getElementById('conn-label');
+    const btnCon   = document.getElementById('btn-connect');
+    const btnDis   = document.getElementById('btn-disconnect');
+    const btnRef   = document.getElementById('btn-refresh');
 
-    if (!demo) return; // elements not ready yet
+    if (!dot) return;
 
-    // Hide all status badges
-    demo.style.display = 'none';
-    connected.style.display = 'none';
-    loading.style.display = 'none';
+    dot.className = `conn-dot ${state === 'connected' ? 'connected' : state === 'loading' ? 'loading' : ''}`;
 
     switch (state) {
       case 'connected':
-        connected.style.display = 'flex';
-        btnConnect.style.display = 'none';
-        btnDisconnect.style.display = 'inline-flex';
-        btnRefresh.style.display = 'inline-flex';
+        if (label)  label.textContent   = 'Google Sheets';
+        if (btnCon) btnCon.style.display = 'none';
+        if (btnDis) btnDis.style.display = 'block';
+        if (btnRef) btnRef.style.display = 'block';
         break;
       case 'loading':
-        loading.style.display = 'flex';
-        btnConnect.style.display = 'none';
-        btnDisconnect.style.display = 'none';
-        btnRefresh.style.display = 'none';
+        if (label)  label.textContent   = 'Connecting…';
+        if (btnCon) btnCon.style.display = 'none';
+        if (btnDis) btnDis.style.display = 'none';
+        if (btnRef) btnRef.style.display = 'none';
         break;
-      case 'demo':
       default:
-        demo.style.display = 'flex';
-        btnConnect.style.display = 'inline-flex';
-        btnDisconnect.style.display = 'none';
-        btnRefresh.style.display = 'none';
-        break;
+        if (label)  label.textContent   = 'Not Connected';
+        if (btnCon) btnCon.style.display = 'block';
+        if (btnDis) btnDis.style.display = 'none';
+        if (btnRef) btnRef.style.display = 'none';
     }
   }
 
@@ -2506,6 +2683,659 @@ class GeloGrowthOS {
       badge.style.display = overdue.length === 0 ? 'none' : 'inline-flex';
     }
   }
+  // ═══════════════════════════════════════════════════════════
+  // ── NEW VIEWS ───────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════
+
+  // ── Calendar View ───────────────────────────────────────────
+  renderCalendar(container) {
+    const leads   = this.data.linkedinLeads || [];
+    const pipe    = this.data.primePipeline || [];
+    const orders  = this.data.calmeraOrders || [];
+    const today   = getDemoToday();
+
+    // Aggregate events from all data sources
+    const events = [];
+
+    leads.forEach(l => {
+      if (l.nextActionDate) events.push({
+        date:    l.nextActionDate,
+        name:    l.contactName  || 'Unknown',
+        type:    'Follow-up',
+        next:    l.nextAction   || '',
+        stage:   l.stage        || '',
+        color:   '#6366f1',
+        viewType:'linkedin', id: l.leadId,
+      });
+    });
+
+    pipe.forEach(p => {
+      if (p.nextActionDate) events.push({
+        date:    p.nextActionDate,
+        name:    p.contactName  || 'Unknown',
+        type:    'Sales Action',
+        next:    p.nextAction   || '',
+        stage:   p.stage        || '',
+        color:   '#10b981',
+        viewType:'prime', id: p.opportunityId,
+      });
+    });
+
+    orders.forEach(o => {
+      if (o.fulfillmentCutoff) events.push({
+        date:    o.fulfillmentCutoff,
+        name:    o.customerName || 'Unknown',
+        type:    'Order Cutoff',
+        next:    o.itemsSummary || '',
+        stage:   o.reconfirmationStatus || '',
+        color:   '#f59e0b',
+        viewType:'calmera', id: o.orderId,
+      });
+    });
+
+    // Apply filter from this._calFilter
+    const filter = this._calFilter || 'all';
+    let filtered = events.slice();
+    if (filter === 'today')    filtered = filtered.filter(e => e.date === today);
+    else if (filter === 'week') {
+      const d7 = new Date(); d7.setDate(d7.getDate() + 7);
+      filtered = filtered.filter(e => e.date >= today && e.date <= d7.toISOString().slice(0,10));
+    }
+    else if (filter === 'overdue') filtered = filtered.filter(e => e.date < today);
+    else if (filter === 'followup') filtered = filtered.filter(e => e.type === 'Follow-up');
+    else if (filter === 'calls')   filtered = filtered.filter(e => e.type === 'Sales Action');
+
+    // Group events by date
+    const groups = {};
+    filtered.sort((a,b) => a.date.localeCompare(b.date)).forEach(ev => {
+      if (!groups[ev.date]) groups[ev.date] = [];
+      groups[ev.date].push(ev);
+    });
+
+    const todayEvents    = (groups[today] || []);
+    const futureEvents   = filtered.filter(e => e.date > today);
+    const overdueEvents  = filtered.filter(e => e.date < today);
+
+    const filterBtns = ['all','today','week','overdue','followup','calls'].map(f => `
+      <button class="calendar-filter-btn ${filter === f ? 'active' : ''}" onclick="app._setCalFilter('${f}')">
+        ${{ all:'All', today:'Today', week:'This Week', overdue:'⚠️ Overdue', followup:'Follow-ups', calls:'Sales Actions' }[f]}
+      </button>
+    `).join('');
+
+    const renderEventCard = (ev) => `
+      <div class="calendar-event-card" onclick="app.openRecordPanel('${ev.viewType}', '${ev.id}')">
+        <div class="event-time-col">${ev.date === today ? 'Today' : ev.date.slice(5).replace('-','/')}</div>
+        <div class="event-type-dot" style="background:${ev.color}"></div>
+        <div class="event-info">
+          <div class="event-lead-name">${ev.name}</div>
+          <div class="event-type-label">${ev.type} · ${ev.stage}</div>
+          ${ev.next ? `<div class="event-next-action">${ev.next}</div>` : ''}
+        </div>
+        <button class="event-msg-btn" onclick="event.stopPropagation();app.openMessageForRecord('${ev.viewType}','${ev.id}')">✉️ Msg</button>
+      </div>
+    `;
+
+    container.innerHTML = `
+      <div class="calendar-toolbar">
+        <div class="calendar-filters">${filterBtns}</div>
+        <button class="btn-primary btn-sm" onclick="app.showToast('Calendar events sync automatically from your leads and pipeline.','info')">+ Manual Event (Coming Soon)</button>
+      </div>
+      <div class="calendar-layout">
+        <div class="calendar-main">
+          ${overdueEvents.length > 0 ? `
+            <div class="calendar-day-group">
+              <div class="calendar-day-label"><span style="color:var(--red)">⚠️ Overdue (${overdueEvents.length})</span></div>
+              ${overdueEvents.map(renderEventCard).join('')}
+            </div>` : ''}
+          ${todayEvents.length > 0 ? `
+            <div class="calendar-day-group">
+              <div class="calendar-day-label">Today — ${today} <span class="today-pill">TODAY</span></div>
+              ${todayEvents.map(renderEventCard).join('')}
+            </div>` : ''}
+          ${Object.entries(groups).filter(([d]) => d > today).map(([date, evs]) => `
+            <div class="calendar-day-group">
+              <div class="calendar-day-label">${date}</div>
+              ${evs.map(renderEventCard).join('')}
+            </div>
+          `).join('')}
+          ${filtered.length === 0 ? `<div class="gos-empty"><span class="gos-empty-icon">📅</span><span class="gos-empty-title">No events match this filter</span><span class="gos-empty-desc">Add leads with follow-up dates to populate your calendar.</span></div>` : ''}
+        </div>
+        <div class="calendar-sidebar">
+          <div class="upcoming-section">
+            <div class="upcoming-section-title">📌 Today (${todayEvents.length})</div>
+            ${todayEvents.slice(0,4).map(ev => `
+              <div class="upcoming-item" onclick="app.openRecordPanel('${ev.viewType}','${ev.id}')">
+                <div class="upcoming-item-name">${ev.name}</div>
+                <div class="upcoming-item-type">${ev.type}</div>
+              </div>`).join('') || '<div class="text-muted text-sm" style="padding:8px">Nothing today</div>'}
+          </div>
+          <div class="upcoming-section">
+            <div class="upcoming-section-title">⏰ Overdue (${overdueEvents.length})</div>
+            ${overdueEvents.slice(0,4).map(ev => `
+              <div class="upcoming-item" onclick="app.openRecordPanel('${ev.viewType}','${ev.id}')">
+                <div class="upcoming-item-name" style="color:var(--red)">${ev.name}</div>
+                <div class="upcoming-item-type">${ev.type} — ${ev.date}</div>
+              </div>`).join('') || '<div class="text-muted text-sm" style="padding:8px">No overdue items</div>'}
+          </div>
+          <div class="upcoming-section">
+            <div class="upcoming-section-title">🔜 Upcoming (${futureEvents.length})</div>
+            ${futureEvents.slice(0,5).map(ev => `
+              <div class="upcoming-item" onclick="app.openRecordPanel('${ev.viewType}','${ev.id}')">
+                <div class="upcoming-item-name">${ev.name}</div>
+                <div class="upcoming-item-type">${ev.date} · ${ev.type}</div>
+              </div>`).join('') || '<div class="text-muted text-sm" style="padding:8px">No upcoming events</div>'}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  _setCalFilter(f) {
+    this._calFilter = f;
+    this.renderContent();
+  }
+
+  // ── Messages Page ────────────────────────────────────────────
+  renderMessagesPage(container) {
+    const leads     = this.data.linkedinLeads || [];
+    const toneOpts  = [
+      { id:'warm',    label:'Warm Taglish',       desc:'Relatable, friendly, mix of Filipino warmth' },
+      { id:'direct',  label:'Direct Professional', desc:'Straight to the point, executive style' },
+      { id:'casual',  label:'Friendly Casual',     desc:'Conversational and light' },
+      { id:'ceo',     label:'CEO / Founder Style', desc:'Confident, positioning-first' },
+      { id:'comm',    label:'Community Style',     desc:'Inclusive, community-first language' },
+    ];
+    const typeOpts  = [
+      { id:'connection',  label:'Connection Request'    },
+      { id:'thank-you',   label:'Thank You Message'     },
+      { id:'follow-up',   label:'Follow-up'             },
+      { id:'call-invite', label:'Call Invite'           },
+      { id:'no-reply',    label:'No-Reply Follow-up'    },
+      { id:'proposal',    label:'Proposal Follow-up'    },
+      { id:'referral',    label:'Referral Ask'          },
+      { id:'reconfirm',   label:'Reconfirmation'        },
+    ];
+
+    const curTone = this._msgTone || 'warm';
+    const curType = this._msgType || 'follow-up';
+
+    container.innerHTML = `
+      <div class="messages-layout">
+        <div class="messages-form-panel">
+          <div style="margin-bottom:16px">
+            <div class="gos-form-label" style="margin-bottom:8px">Lead / Name</div>
+            <input class="gos-form-input" id="msg-page-name" placeholder="e.g. Maria Cruz" list="msg-leads-list">
+            <datalist id="msg-leads-list">${leads.map(l => `<option value="${l.contactName}">`).join('')}</datalist>
+          </div>
+          <div class="gos-form-group">
+            <label class="gos-form-label">Offer / Category</label>
+            <input class="gos-form-input" id="msg-page-offer" placeholder="e.g. Consultation, Self Care Bundle">
+          </div>
+          <div class="gos-form-group">
+            <label class="gos-form-label">Stage</label>
+            <select class="gos-form-select" id="msg-page-stage">
+              <option>New</option><option>Contacted</option><option>Follow-up Due</option>
+              <option>Call Booked</option><option>Proposal Sent</option><option>Negotiation</option>
+            </select>
+          </div>
+          <div class="gos-form-group">
+            <label class="gos-form-label">Platform</label>
+            <select class="gos-form-select" id="msg-page-platform">
+              <option>LinkedIn</option><option>Instagram</option><option>Facebook</option>
+              <option>Messenger</option><option>WhatsApp</option><option>SMS</option><option>Email</option>
+            </select>
+          </div>
+          <div class="gos-form-label" style="margin-bottom:8px">Message Type</div>
+          <div class="message-type-grid">
+            ${typeOpts.map(t => `
+              <button class="message-type-btn ${curType === t.id ? 'active' : ''}" 
+                      onclick="app._setMsgType('${t.id}')">${t.label}</button>
+            `).join('')}
+          </div>
+          <div class="gos-form-label" style="margin:8px 0">Tone</div>
+          <div class="tone-selector">
+            ${toneOpts.map(t => `
+              <button class="tone-option ${curTone === t.id ? 'active' : ''}"
+                      onclick="app._setMsgTone('${t.id}')">
+                <strong>${t.label}</strong> — <span style="font-weight:400">${t.desc}</span>
+              </button>
+            `).join('')}
+          </div>
+          <button class="btn-primary" style="width:100%;margin-top:16px" onclick="app._generateMessage()">✨ Generate Message</button>
+        </div>
+        <div class="messages-preview-panel">
+          <div class="messages-panel-header">Message Preview</div>
+          <div class="message-preview-body" id="msg-page-preview">
+            <div class="gos-empty" style="padding:40px 20px">
+              <span class="gos-empty-icon">✉️</span>
+              <span class="gos-empty-title">Fill in the form and generate a message</span>
+              <span class="gos-empty-desc">Choose a type, tone, and click Generate.</span>
+            </div>
+          </div>
+          <div class="message-actions" id="msg-page-actions" style="display:none">
+            <button class="btn-copy large" onclick="app._copyPageMessage()">📋 Copy Message</button>
+            <button class="btn-secondary" onclick="app._generateMessage()">↻ Regenerate</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  _setMsgType(type) { this._msgType = type; this.renderContent(); }
+  _setMsgTone(tone) { this._msgTone = tone; this.renderContent(); }
+
+  _generateMessage() {
+    const name     = document.getElementById('msg-page-name')?.value    || '[Name]';
+    const offer    = document.getElementById('msg-page-offer')?.value   || '[Offer]';
+    const stage    = document.getElementById('msg-page-stage')?.value   || 'Follow-up Due';
+    const platform = document.getElementById('msg-page-platform')?.value|| 'LinkedIn';
+    const type     = this._msgType || 'follow-up';
+    const tone     = this._msgTone || 'warm';
+
+    // Build a contextual message using MESSAGE_TEMPLATES if available
+    let msg = '';
+    try {
+      // Try existing message generator first
+      const streamMap = { 'follow-up':'linkedin','call-invite':'linkedin','proposal':'prime','reconfirm':'calmera' };
+      const stream    = streamMap[type] || 'linkedin';
+      const templates = MessageGenerator.getTemplates(stream);
+      const template  = templates[0]; // pick first available
+      if (template) {
+        const result = MessageGenerator.fillTemplate(template, { name, company: offer, serviceInterest: offer });
+        msg = result.body;
+      }
+    } catch(e) {}
+
+    if (!msg) {
+      // Fallback: generate a simple contextual message
+      const toneMap = {
+        warm:   `Hi ${name}! `,
+        direct: `Hi ${name}, `,
+        casual: `Hey ${name}! `,
+        ceo:    `Hi ${name}, `,
+        comm:   `Hi ${name}! `,
+      };
+      const typeMap = {
+        'connection':  `I'd love to connect. I help people with ${offer}. Would love to have you in my network!`,
+        'thank-you':   `Thank you so much for connecting! Excited to learn more about what you're working on.`,
+        'follow-up':   `Just following up on our last conversation. I work with ${offer} and wanted to check if this could be a fit for you.`,
+        'call-invite': `Would love to hop on a quick call to explore how ${offer} could help you. Are you free this week?`,
+        'no-reply':    `Hi again! I know things get busy — just wanted to check if you had a chance to see my last message about ${offer}.`,
+        'proposal':    `Following up on the proposal I sent. Happy to answer any questions or adjust based on your needs.`,
+        'referral':    `Do you know anyone who might benefit from ${offer}? I'd appreciate any referrals!`,
+        'reconfirm':   `Hi ${name}! Just confirming your order. Please let me know if anything has changed. Thank you!`,
+      };
+      msg = (toneMap[tone] || `Hi ${name}! `) + (typeMap[type] || 'How are you?');
+    }
+
+    this._pageMessage = msg;
+    const prev = document.getElementById('msg-page-preview');
+    const acts = document.getElementById('msg-page-actions');
+    if (prev) prev.innerHTML = `<div class="message-preview-text">${msg}</div>`;
+    if (acts) acts.style.display = 'flex';
+  }
+
+  _copyPageMessage() {
+    if (!this._pageMessage) return;
+    navigator.clipboard.writeText(this._pageMessage).then(() => {
+      this.showToast('Message copied! 📋', 'success');
+    }).catch(() => {
+      this.showToast('Copy failed — please copy manually', 'error');
+    });
+  }
+
+  // ── Settings Page ─────────────────────────────────────────────
+  renderSettings(container) {
+    const settings = settingsEngine.get();
+    const tab      = this._settingsTab || 'workspace';
+
+    const tabs = [
+      { id:'workspace',  label:'Workspace' },
+      { id:'profile',    label:'Profile'   },
+      { id:'modules',    label:'Modules'   },
+      { id:'categories', label:'Categories'},
+      { id:'sheets',     label:'Sheets'    },
+      { id:'appearance', label:'Appearance'},
+    ];
+
+    container.innerHTML = `
+      <div class="settings-layout">
+        <div class="settings-tabs">
+          ${tabs.map(t => `
+            <button class="settings-tab ${tab === t.id ? 'active' : ''}" onclick="app._setSettingsTab('${t.id}')">
+              ${t.label}
+            </button>
+          `).join('')}
+        </div>
+
+        <!-- Workspace -->
+        <div class="settings-section ${tab === 'workspace' ? 'active' : ''}">
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <div>
+                <div class="settings-card-title">Workspace Settings</div>
+                <div class="settings-card-desc">Customize the name and subtitle of your Growth OS.</div>
+              </div>
+            </div>
+            <div class="settings-card-body">
+              <div class="gos-form-group">
+                <label class="gos-form-label">App Name</label>
+                <input class="gos-form-input" id="set-appName" value="${this._esc(settings.appName)}" placeholder="e.g. Gelo Growth OS">
+                <div class="gos-form-hint">Appears in the browser tab title.</div>
+              </div>
+              <div class="gos-form-group">
+                <label class="gos-form-label">Workspace Name</label>
+                <input class="gos-form-input" id="set-workspaceName" value="${this._esc(settings.workspaceName)}" placeholder="e.g. Growth OS">
+                <div class="gos-form-hint">Appears in the sidebar logo area.</div>
+              </div>
+              <div class="gos-form-group">
+                <label class="gos-form-label">Workspace Subtitle</label>
+                <textarea class="gos-form-textarea" id="set-workspaceSubtitle" rows="2">${this._esc(settings.workspaceSubtitle)}</textarea>
+                <div class="gos-form-hint">A short description of your workspace purpose.</div>
+              </div>
+              <button class="btn-primary" onclick="app._saveWorkspaceSettings()">Save Workspace</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Profile -->
+        <div class="settings-section ${tab === 'profile' ? 'active' : ''}">
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <div>
+                <div class="settings-card-title">Your Profile</div>
+                <div class="settings-card-desc">How your name and role appear in the sidebar.</div>
+              </div>
+            </div>
+            <div class="settings-card-body">
+              <div class="gos-form-row">
+                <div class="gos-form-group">
+                  <label class="gos-form-label">Display Name</label>
+                  <input class="gos-form-input" id="set-displayName" value="${this._esc(settings.profile.displayName)}">
+                </div>
+                <div class="gos-form-group">
+                  <label class="gos-form-label">Avatar Initials</label>
+                  <input class="gos-form-input" id="set-avatarInitials" value="${this._esc(settings.profile.avatarInitials)}" maxlength="2" style="text-transform:uppercase">
+                </div>
+              </div>
+              <div class="gos-form-row">
+                <div class="gos-form-group">
+                  <label class="gos-form-label">Role / Title</label>
+                  <input class="gos-form-input" id="set-role" value="${this._esc(settings.profile.role)}">
+                </div>
+                <div class="gos-form-group">
+                  <label class="gos-form-label">Company</label>
+                  <input class="gos-form-input" id="set-company" value="${this._esc(settings.profile.company)}">
+                </div>
+              </div>
+              <div class="gos-form-group">
+                <label class="gos-form-label">Email</label>
+                <input class="gos-form-input" type="email" id="set-email" value="${this._esc(settings.profile.email)}">
+              </div>
+              <div class="gos-form-group">
+                <label class="gos-form-label">Main Focus</label>
+                <input class="gos-form-input" id="set-mainFocus" value="${this._esc(settings.profile.mainFocus)}" placeholder="e.g. Sales, Content, and Growth">
+              </div>
+              <button class="btn-primary" onclick="app._saveProfileSettings()">Save Profile</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modules -->
+        <div class="settings-section ${tab === 'modules' ? 'active' : ''}">
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <div>
+                <div class="settings-card-title">Modules</div>
+                <div class="settings-card-desc">Rename modules. Changes update the sidebar and navigation instantly.</div>
+              </div>
+            </div>
+            <div class="settings-card-body">
+              ${settings.modules.map((mod, idx) => `
+                <div class="module-item">
+                  <div class="module-item-icon">${mod.icon}</div>
+                  <div class="module-item-info">
+                    <div class="module-item-name">${this._esc(mod.label)}</div>
+                    ${mod.sheetTab ? `<div class="module-item-sheet">📊 ${mod.sheetTab}</div>` : '<div class="module-item-sheet text-muted">No sheet tab</div>'}
+                  </div>
+                  <div class="module-item-actions">
+                    <input class="module-rename-input" id="mod-label-${idx}" value="${this._esc(mod.label)}" placeholder="Module name">
+                    ${mod.sheetTab ? `<input class="module-rename-input" id="mod-tab-${idx}" value="${this._esc(mod.sheetTab)}" placeholder="Sheet tab name" style="width:120px">` : ''}
+                    <label class="toggle-switch" title="Show/hide this module">
+                      <input type="checkbox" ${mod.visible ? 'checked' : ''} onchange="app._toggleModuleVisible(${idx}, this.checked)">
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                </div>
+              `).join('')}
+              <div style="margin-top:16px">
+                <button class="btn-primary" onclick="app._saveModuleSettings()">Save Module Names</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Categories -->
+        <div class="settings-section ${tab === 'categories' ? 'active' : ''}">
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <div>
+                <div class="settings-card-title">Categories</div>
+                <div class="settings-card-desc">Categories help you organize leads, content, and orders by business area.</div>
+              </div>
+              <button class="btn-secondary btn-sm" onclick="app._addCategory()">+ Add Category</button>
+            </div>
+            <div class="settings-card-body">
+              <div id="category-list">
+                ${settings.categories.map((cat, idx) => `
+                  <div class="category-item" id="cat-item-${idx}">
+                    <div class="category-color-dot" style="background:${cat.color}"></div>
+                    <input class="category-label-input" id="cat-label-${idx}" value="${this._esc(cat.label)}">
+                    <input type="color" value="${cat.color}" style="width:32px;height:32px;border:none;background:none;cursor:pointer;border-radius:var(--radius-sm)" onchange="app._setCategoryColor(${idx}, this.value)">
+                    <button class="btn-ghost btn-sm btn-icon" onclick="app._deleteCategory(${idx})" title="Delete">🗑️</button>
+                  </div>
+                `).join('')}
+              </div>
+              <div style="margin-top:16px">
+                <button class="btn-primary" onclick="app._saveCategorySettings()">Save Categories</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Sheets -->
+        <div class="settings-section ${tab === 'sheets' ? 'active' : ''}">
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <div>
+                <div class="settings-card-title">Google Sheets Connection</div>
+                <div class="settings-card-desc">Status: <span class="conn-status-pill ${this.sheetsConnected ? 'connected' : 'disconnected'}">${this.sheetsConnected ? '✅ Connected' : '❌ Not Connected'}</span></div>
+              </div>
+            </div>
+            <div class="settings-card-body">
+              <div class="gos-form-group">
+                <label class="gos-form-label">Apps Script Web App URL</label>
+                <input class="gos-form-input" id="set-webAppUrl" value="${this._esc(settings.sheets.webAppUrl || SHEETS_CONFIG.WEBAPP_URL || '')}" placeholder="https://script.google.com/macros/s/...">
+                <div class="gos-form-hint">Deploy your sheet-api.gs as a Web App and paste the URL here.</div>
+              </div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
+                <button class="btn-primary" onclick="app._saveAndTestSheets()">Save &amp; Test Connection</button>
+                ${this.sheetsConnected ? '<button class="btn-secondary" onclick="app.refreshFromSheets()">↻ Sync Now</button>' : ''}
+                ${this.sheetsConnected ? '<button class="btn-danger btn-sm" onclick="app.disconnectSheets()">Disconnect</button>' : ''}
+              </div>
+              <div class="gos-form-label" style="margin-bottom:12px">Sheet Tab Mappings</div>
+              ${Object.entries(settings.sheets.tabMappings).map(([modId, tabName]) => `
+                <div class="sheet-mapping-row">
+                  <div class="sheet-mapping-label">${settingsEngine.getModuleLabel(modId) || modId}</div>
+                  <input class="gos-form-input" id="tab-${modId}" value="${this._esc(tabName)}" placeholder="Tab name in Google Sheets">
+                </div>
+              `).join('')}
+              <button class="btn-secondary" style="margin-top:12px" onclick="app._saveTabMappings()">Save Tab Names</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Appearance -->
+        <div class="settings-section ${tab === 'appearance' ? 'active' : ''}">
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <div class="settings-card-title">Appearance</div>
+            </div>
+            <div class="settings-card-body">
+              <div class="gos-form-label" style="margin-bottom:12px">Theme</div>
+              <div class="theme-options">
+                <div class="theme-option ${settings.appearance.theme === 'dark' ? 'active' : ''}" onclick="app._setTheme('dark')">
+                  <div class="theme-option-preview dark-preview"></div>
+                  <div class="theme-option-label">Dark Mode</div>
+                  <div class="theme-option-desc">Premium dark navy — easy on the eyes</div>
+                </div>
+                <div class="theme-option ${settings.appearance.theme === 'light' ? 'active' : ''}" onclick="app._setTheme('light')">
+                  <div class="theme-option-preview light-preview"></div>
+                  <div class="theme-option-label">Light Mode</div>
+                  <div class="theme-option-desc">Clean white — great for daytime use</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <div class="settings-card-title">⚠️ Reset Settings</div>
+            </div>
+            <div class="settings-card-body">
+              <p style="color:var(--text-muted);font-size:13px;margin-bottom:12px">Reset all workspace settings back to defaults. Your Google Sheets data will NOT be affected.</p>
+              <button class="btn-danger" onclick="app._resetSettings()">Reset All Settings</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  _setSettingsTab(tab) { this._settingsTab = tab; this.renderContent(); }
+  _setTheme(t) { settingsEngine.applyTheme(t); this.showToast(`Switched to ${t} mode`, 'success'); this.renderContent(); }
+
+  _esc(str) { return String(str || '').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+  _saveWorkspaceSettings() {
+    const settings = settingsEngine.get();
+    settings.appName           = document.getElementById('set-appName')?.value           || settings.appName;
+    settings.workspaceName     = document.getElementById('set-workspaceName')?.value     || settings.workspaceName;
+    settings.workspaceSubtitle = document.getElementById('set-workspaceSubtitle')?.value || settings.workspaceSubtitle;
+    settingsEngine.save(settings);
+    this.updateAppName();
+    document.getElementById('page-title').textContent = settings.appName;
+    this.showToast('Workspace settings saved!', 'success');
+  }
+
+  _saveProfileSettings() {
+    const settings = settingsEngine.get();
+    settings.profile.displayName    = document.getElementById('set-displayName')?.value    || settings.profile.displayName;
+    settings.profile.avatarInitials = document.getElementById('set-avatarInitials')?.value || settings.profile.avatarInitials;
+    settings.profile.role           = document.getElementById('set-role')?.value           || settings.profile.role;
+    settings.profile.company        = document.getElementById('set-company')?.value        || settings.profile.company;
+    settings.profile.email          = document.getElementById('set-email')?.value          || '';
+    settings.profile.mainFocus      = document.getElementById('set-mainFocus')?.value      || settings.profile.mainFocus;
+    settingsEngine.save(settings);
+    this.updateSidebarProfile();
+    this.showToast('Profile saved!', 'success');
+  }
+
+  _saveModuleSettings() {
+    const settings = settingsEngine.get();
+    settings.modules.forEach((mod, idx) => {
+      const labelEl = document.getElementById(`mod-label-${idx}`);
+      const tabEl   = document.getElementById(`mod-tab-${idx}`);
+      if (labelEl && labelEl.value.trim()) mod.label = labelEl.value.trim();
+      if (tabEl   && tabEl.value.trim())   mod.sheetTab = tabEl.value.trim();
+    });
+    settingsEngine.save(settings);
+    this.buildNavigation();
+    this.updateTopbar();
+    this.showToast('Module names saved!', 'success');
+    this.renderContent();
+  }
+
+  _toggleModuleVisible(idx, visible) {
+    const settings = settingsEngine.get();
+    if (settings.modules[idx]) settings.modules[idx].visible = visible;
+    settingsEngine.save(settings);
+    this.buildNavigation();
+  }
+
+  _addCategory() {
+    const settings = settingsEngine.get();
+    const colors   = ['#6366f1','#10b981','#3b82f6','#f59e0b','#ec4899','#eab308','#22d3ee','#a855f7'];
+    settings.categories.push({
+      id:    `cat-${Date.now()}`,
+      label: 'New Category',
+      color: colors[settings.categories.length % colors.length],
+    });
+    settingsEngine.save(settings);
+    this.renderContent();
+  }
+
+  _setCategoryColor(idx, color) {
+    const settings = settingsEngine.get();
+    if (settings.categories[idx]) settings.categories[idx].color = color;
+    settingsEngine.save(settings);
+  }
+
+  _deleteCategory(idx) {
+    const settings = settingsEngine.get();
+    settings.categories.splice(idx, 1);
+    settingsEngine.save(settings);
+    this.renderContent();
+  }
+
+  _saveCategorySettings() {
+    const settings = settingsEngine.get();
+    settings.categories.forEach((cat, idx) => {
+      const el = document.getElementById(`cat-label-${idx}`);
+      if (el && el.value.trim()) cat.label = el.value.trim();
+    });
+    settingsEngine.save(settings);
+    this.showToast('Categories saved!', 'success');
+  }
+
+  async _saveAndTestSheets() {
+    const settings   = settingsEngine.get();
+    const url        = document.getElementById('set-webAppUrl')?.value.trim();
+    if (!url) { this.showToast('Please enter a Web App URL', 'warning'); return; }
+    settings.sheets.webAppUrl = url;
+    settingsEngine.save(settings);
+    // Update SHEETS_CONFIG too
+    if (typeof SHEETS_CONFIG !== 'undefined') SHEETS_CONFIG.WEBAPP_URL = url;
+    this.showToast('URL saved. Testing connection…', 'info');
+    await this.connectSheets();
+    this.renderContent();
+  }
+
+  _saveTabMappings() {
+    const settings = settingsEngine.get();
+    Object.keys(settings.sheets.tabMappings).forEach(modId => {
+      const el = document.getElementById(`tab-${modId}`);
+      if (el && el.value.trim()) settings.sheets.tabMappings[modId] = el.value.trim();
+    });
+    settingsEngine.save(settings);
+    this.showToast('Tab mappings saved!', 'success');
+  }
+
+  _resetSettings() {
+    this.showConfirm(
+      'Reset All Settings',
+      'This will reset all workspace settings (names, modules, categories, theme) to defaults. Your Google Sheets data will NOT be affected.',
+      '🔄 Reset',
+      () => {
+        settingsEngine.reset();
+        settingsEngine.applyTheme();
+        this.buildNavigation();
+        this.updateSidebarProfile();
+        this.updateAppName();
+        this.renderContent();
+        this.showToast('Settings reset to defaults.', 'info');
+      }
+    );
+  }
 }
 
 // ── Initialize ────────────────────────────────────────────────
@@ -2515,6 +3345,9 @@ document.addEventListener('DOMContentLoaded', () => {
   app.updateNavBadge();
 
   // Auto-connect to Google Sheets on startup if configured and not explicitly disconnected
+  const savedUrl = settingsEngine.get().sheets.webAppUrl;
+  if (savedUrl && typeof SHEETS_CONFIG !== 'undefined') SHEETS_CONFIG.WEBAPP_URL = savedUrl;
+
   if (sheetsService.isConfigured() && localStorage.getItem('gos_sheets_connected') !== 'false') {
     app.connectSheets();
   }

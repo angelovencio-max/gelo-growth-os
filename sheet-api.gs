@@ -50,7 +50,7 @@ function doGet(e) {
 function doPost(e) {
   try {
     const payload = JSON.parse(e.postData.contents);
-    const { action, tab, data, rowIndex } = payload;
+    const { action, tab, data, rowIndex, oldName, newName, oldHeader, newHeader, tabName } = payload;
 
     if (action === 'append' && tab && data) {
       const result = appendRow(tab, data);
@@ -72,7 +72,22 @@ function doPost(e) {
       return sendJSON({ success: true, action: 'batchAppend', tab: tab, rowsAdded: data.length, rowsAfter: result });
     }
 
-    return sendJSON({ error: 'Invalid action. Use: append, update, delete, or batchAppend' });
+    if (action === 'renameTab' && oldName && newName) {
+      renameTab(oldName, newName);
+      return sendJSON({ success: true, action: 'renameTab', oldName, newName });
+    }
+
+    if (action === 'renameSpreadsheet' && newName) {
+      renameSpreadsheet(newName);
+      return sendJSON({ success: true, action: 'renameSpreadsheet', newName });
+    }
+
+    if (action === 'renameColumn' && tabName && oldHeader && newHeader) {
+      renameColumn(tabName, oldHeader, newHeader);
+      return sendJSON({ success: true, action: 'renameColumn', tabName, oldHeader, newHeader });
+    }
+
+    return sendJSON({ error: 'Invalid action. Use: append, update, delete, batchAppend, renameTab, renameSpreadsheet, or renameColumn' });
 
   } catch (err) {
     return sendJSON({ error: err.message });
@@ -83,17 +98,12 @@ function doPost(e) {
 // ── Read All Tabs ─────────────────────────────────────────────
 function readAllTabs() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const tabNames = [
-    'Contacts', 'Organizations', 'LinkedIn_Leads', 'Prime_Pipeline',
-    'SCC_Content', 'Calmera_Orders', 'Source_Assets', 'Repurpose_Outputs',
-    'Interactions', 'Tasks'
-  ];
-
+  const sheets = ss.getSheets();
   const result = {};
 
-  tabNames.forEach(name => {
-    const sheet = ss.getSheetByName(name);
-    if (sheet && sheet.getLastRow() > 1) {
+  sheets.forEach(sheet => {
+    const name = sheet.getName();
+    if (sheet.getLastRow() > 1 && sheet.getLastColumn() > 0) {
       const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
       const dataRange = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn());
       const rows = dataRange.getValues();
@@ -214,6 +224,38 @@ function deleteRow(tabName, rowIndex) {
   
   const sheetRow = rowIndex + 2; // +1 for header, +1 for 1-indexed
   sheet.deleteRow(sheetRow);
+}
+
+
+// ── Rename Tab ────────────────────────────────────────────────
+function renameTab(oldName, newName) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(oldName);
+  if (!sheet) throw new Error(`Tab "${oldName}" not found`);
+  sheet.setName(newName);
+}
+
+// ── Rename Spreadsheet ────────────────────────────────────────
+function renameSpreadsheet(newName) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  ss.setName(newName);
+}
+
+// ── Rename Column ─────────────────────────────────────────────
+function renameColumn(tabName, oldHeader, newHeader) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(tabName);
+  if (!sheet) throw new Error(`Tab "${tabName}" not found`);
+  
+  if (sheet.getLastColumn() < 1) throw new Error(`Tab "${tabName}" has no columns`);
+  
+  const headersRange = sheet.getRange(1, 1, 1, sheet.getLastColumn());
+  const headers = headersRange.getValues()[0];
+  const colIndex = headers.indexOf(oldHeader);
+  
+  if (colIndex === -1) throw new Error(`Column "${oldHeader}" not found in tab "${tabName}"`);
+  
+  sheet.getRange(1, colIndex + 1).setValue(newHeader);
 }
 
 
