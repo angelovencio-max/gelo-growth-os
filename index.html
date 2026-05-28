@@ -1,181 +1,198 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Gelo Growth OS — Unified operating system for prospects, community content, orders, and repurposed growth assets.">
-  <title>Gelo Growth OS — Command Center</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title id="page-title">Growth OS</title>
+  <meta name="description" content="Your personal operating system for sales, content, and growth.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>">
 </head>
 <body>
 
-<div class="gos-app">
+<div class="gos-app" id="app">
 
-  <!-- ═══════════════════ SIDEBAR ═══════════════════ -->
-  <aside class="gos-sidebar">
-    <div class="gos-logo">
-      <div class="gos-logo-icon">G</div>
-      <div class="gos-logo-text">
-        <span class="gos-logo-title">Gelo Growth OS</span>
-        <span class="gos-logo-subtitle">Operations Hub</span>
+  <!-- ── Sidebar (Desktop) ─────────────────────────────────── -->
+  <aside class="gos-sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo">
+        <div class="logo-icon">G</div>
+        <span class="logo-name" id="sidebar-app-name">Growth OS</span>
+      </div>
+      <button class="sidebar-close-btn" id="sidebar-close-btn" onclick="app.closeMobileSidebar()" aria-label="Close menu">✕</button>
+      <button class="sidebar-toggle-btn hide-on-mobile" id="btn-sidebar-toggle" onclick="app.toggleSidebar()" title="Collapse sidebar" aria-label="Collapse sidebar"></button>
+    </div>
+
+    <div class="sidebar-profile" id="sidebar-profile">
+      <div class="profile-avatar" id="sidebar-avatar">GV</div>
+      <div class="profile-info">
+        <div class="profile-name" id="sidebar-name">Gelo</div>
+        <div class="profile-company" id="sidebar-company">Prime · Founder</div>
       </div>
     </div>
 
-    <nav class="gos-nav">
-      <div class="gos-nav-section">
-        <div class="gos-nav-label">Overview</div>
-        <a class="gos-nav-item active" data-view="command-center" href="#">
-          <span class="gos-nav-icon">⚡</span>
-          <span>Command Center</span>
-          <span class="gos-nav-badge" id="nav-badge-overdue">2</span>
-        </a>
-      </div>
-
-      <div class="gos-nav-section">
-        <div class="gos-nav-label">Growth Streams</div>
-        <a class="gos-nav-item" data-view="linkedin" href="#">
-          <span class="gos-nav-icon">🔗</span>
-          <span>LinkedIn Leads</span>
-        </a>
-        <a class="gos-nav-item" data-view="prime" href="#">
-          <span class="gos-nav-icon">💼</span>
-          <span>Prime Pipeline</span>
-        </a>
-        <a class="gos-nav-item" data-view="scc" href="#">
-          <span class="gos-nav-icon">🌿</span>
-          <span>Self Care Club</span>
-        </a>
-        <a class="gos-nav-item" data-view="calmera" href="#">
-          <span class="gos-nav-icon">📦</span>
-          <span>Calmera Orders</span>
-        </a>
-        <a class="gos-nav-item" data-view="repurposing" href="#">
-          <span class="gos-nav-icon">🔄</span>
-          <span>Repurposing</span>
-        </a>
-      </div>
+    <nav class="sidebar-nav" id="sidebar-nav" aria-label="Main navigation">
+      <!-- Dynamically rendered by app.js buildNavigation() -->
     </nav>
 
-    <div class="gos-sidebar-footer">
-      <!-- Connection status -->
-      <div id="sheets-status">
-        <div class="gos-demo-badge" id="status-demo">
-          <span class="dot"></span>
-          Demo Mode — sample data
-        </div>
-        <div class="gos-demo-badge" id="status-connected" style="display:none; background:var(--green-muted); border-color:rgba(16,185,129,0.2); color:var(--green-text)">
-          <span class="dot" style="background:var(--green)"></span>
-          Connected to Google Sheets
-        </div>
-        <div class="gos-demo-badge" id="status-loading" style="display:none; background:var(--blue-muted); border-color:rgba(59,130,246,0.2); color:var(--blue-text)">
-          <span class="dot" style="background:var(--blue)"></span>
-          Loading from Sheets...
-        </div>
+    <div class="sidebar-footer">
+      <div class="connection-indicator" id="connection-indicator">
+        <span class="conn-dot" id="conn-dot"></span>
+        <span class="conn-label" id="conn-label">Not Connected</span>
       </div>
-      <div style="margin-top:10px; display:flex; gap:8px">
-        <button class="gos-btn gos-btn-primary gos-btn-sm" id="btn-connect" onclick="app.connectSheets()" style="flex:1">🔗 Connect Sheets</button>
-        <button class="gos-btn gos-btn-danger gos-btn-sm" id="btn-disconnect" onclick="app.disconnectSheets()" style="display:none">Disconnect</button>
-        <button class="gos-btn gos-btn-ghost gos-btn-sm" id="btn-refresh" onclick="app.refreshFromSheets()" style="display:none" title="Refresh data">🔄</button>
+      <div class="sidebar-conn-actions">
+        <button class="btn-sidebar-action" id="btn-connect" onclick="app.connectSheets()">Connect Sheets</button>
+        <button class="btn-sidebar-action" id="btn-disconnect" style="display:none" onclick="app.disconnectSheets()">Disconnect</button>
+        <button class="btn-sidebar-action" id="btn-refresh" style="display:none" onclick="app.refreshFromSheets()">↻ Sync</button>
       </div>
     </div>
   </aside>
 
-  <!-- ═══════════════════ MAIN CONTENT ═══════════════════ -->
-  <main class="gos-main">
+  <!-- ── Sidebar Overlay (Mobile) ──────────────────────────── -->
+  <div class="sidebar-overlay" id="sidebar-overlay" onclick="app.closeMobileSidebar()"></div>
 
-    <!-- Top Bar -->
-    <header class="gos-topbar">
-      <div class="gos-topbar-left">
-        <h1 class="gos-view-title" id="view-title">Daily Command Center</h1>
-        <p class="gos-view-subtitle" id="view-subtitle">Your daily action hub — overdue, due today, and upcoming tasks</p>
+  <!-- ── Main Content ──────────────────────────────────────── -->
+  <main class="gos-main" id="gos-main">
+
+    <!-- Topbar -->
+    <header class="gos-topbar" id="gos-topbar">
+      <div class="topbar-left">
+        <button class="topbar-menu-btn" id="topbar-menu-btn" onclick="app.openMobileSidebar()" aria-label="Open menu">
+          <span></span><span></span><span></span>
+        </button>
+        <div class="topbar-title-block">
+          <h1 class="topbar-title" id="view-title">Today</h1>
+          <p class="topbar-subtitle" id="view-subtitle"></p>
+        </div>
       </div>
-      <div class="gos-filters">
-        <select class="gos-filter" id="filter-status">
-          <option value="all">All Statuses</option>
-        </select>
-        <select class="gos-filter" id="filter-priority">
-          <option value="all">All Priorities</option>
-          <option value="Critical">Critical</option>
-          <option value="High">High</option>
-          <option value="Normal">Normal</option>
-          <option value="Low">Low</option>
-        </select>
-        <input type="text" class="gos-search" id="global-search" placeholder="Search records...">
-      </div>
-      <div class="gos-topbar-actions">
-        <button class="gos-btn gos-btn-secondary" id="btn-message-gen" title="Message Generator">✉️ Messages</button>
-        <button class="gos-btn gos-btn-primary" id="btn-add-record">+ Add Record</button>
+      <div class="topbar-right">
+        <div class="topbar-search-wrap" id="topbar-search-wrap">
+          <span class="search-icon"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg></span>
+          <input class="topbar-search" id="global-search" type="search" placeholder="Search…" autocomplete="off" oninput="app.handleSearch(this.value)">
+        </div>
+        <div class="topbar-controls">
+          <select class="topbar-filter" id="filter-status" onchange="app.handleFilterStatus(this.value)">
+            <option value="all">All</option>
+          </select>
+          <button class="topbar-icon-btn" id="btn-theme-toggle" onclick="app.toggleTheme()" title="Toggle theme" aria-label="Toggle light/dark mode"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M4.93 4.93l1.41 1.41"/><path d="M17.66 17.66l1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="M6.34 17.66l-1.41 1.41"/><path d="M19.07 4.93l-1.41 1.41"/></svg></button>
+          <button class="topbar-btn-primary" id="btn-add-record" onclick="app.openAddModal()">+ Add</button>
+        </div>
       </div>
     </header>
 
-    <!-- Dynamic Content Area -->
+    <!-- Page Content Area -->
     <div class="gos-content" id="main-content">
-      <!-- Rendered by app.js -->
+      <!-- Rendered dynamically by app.js -->
+      <div class="initial-loading">
+        <div class="loading-spinner"></div>
+        <p>Loading Growth OS…</p>
+      </div>
     </div>
 
   </main>
 
-  <!-- ═══════════════════ DETAIL PANEL ═══════════════════ -->
-  <div class="gos-panel-overlay" id="panel-overlay"></div>
-  <div class="gos-panel" id="detail-panel">
-    <div class="gos-panel-header">
-      <h2 class="gos-panel-title" id="panel-title">Record Details</h2>
-      <button class="gos-panel-close" id="panel-close">✕</button>
-    </div>
-    <div class="gos-panel-body" id="panel-body">
+  <!-- ── Mobile Bottom Navigation ──────────────────────────── -->
+  <nav class="mobile-bottom-nav" id="mobile-bottom-nav" aria-label="Mobile navigation">
+    <button class="mobile-nav-btn active" id="mob-nav-today" data-module="today" onclick="app.navigateTo('today')">
+      <span class="mob-nav-icon">🏠</span>
+      <span class="mob-nav-label" id="mob-label-today">Today</span>
+    </button>
+    <button class="mobile-nav-btn" id="mob-nav-calendar" data-module="calendar" onclick="app.navigateTo('calendar')">
+      <span class="mob-nav-icon">📅</span>
+      <span class="mob-nav-label" id="mob-label-calendar">Calendar</span>
+    </button>
+    <button class="mobile-nav-btn" id="mob-nav-leads" data-module="leads" onclick="app.navigateTo('leads')">
+      <span class="mob-nav-icon">👤</span>
+      <span class="mob-nav-label" id="mob-label-leads">Leads</span>
+    </button>
+    <button class="mobile-nav-btn" id="mob-nav-messages" data-module="messages" onclick="app.navigateTo('messages')">
+      <span class="mob-nav-icon">💬</span>
+      <span class="mob-nav-label" id="mob-label-messages">Messages</span>
+    </button>
+    <button class="mobile-nav-btn" id="mob-nav-more" onclick="app.openMoreDrawer()">
+      <span class="mob-nav-icon">⋯</span>
+      <span class="mob-nav-label">More</span>
+    </button>
+  </nav>
+
+  <!-- ── Mobile More Drawer ─────────────────────────────────── -->
+  <div class="drawer-backdrop" id="drawer-backdrop" onclick="app.closeMoreDrawer()"></div>
+  <div class="mobile-drawer" id="mobile-drawer">
+    <div class="drawer-handle"></div>
+    <div class="drawer-title">More</div>
+    <nav class="drawer-nav" id="drawer-nav">
       <!-- Rendered dynamically -->
-    </div>
-    <div class="gos-panel-footer" id="panel-footer">
-      <button class="gos-btn gos-btn-secondary" onclick="app.closePanel()">Close</button>
-      <button class="gos-btn gos-btn-primary" onclick="app.selectedRecord && app.openMessageForRecord(app.selectedRecord.viewType, app.selectedRecord.record[Object.keys(app.selectedRecord.record).find(k => k.endsWith('Id') && k !== 'contactId' && k !== 'organizationId' && k !== 'sourceLeadId') || 'id'])">✉️ Generate Message</button>
-    </div>
+    </nav>
   </div>
 
-  <!-- ═══════════════════ ADD RECORD MODAL ═══════════════════ -->
-  <div class="gos-modal-overlay" id="add-modal-overlay">
-    <div class="gos-modal">
-      <div class="gos-modal-header">
-        <h2 class="gos-modal-title">Add New Record</h2>
-        <button class="gos-panel-close" id="modal-close">✕</button>
-      </div>
-      <form id="add-form">
-        <div class="gos-modal-body" id="add-form-body">
-          <!-- Form fields rendered by app.js -->
-        </div>
-        <div class="gos-modal-footer">
-          <button type="button" class="gos-btn gos-btn-secondary" onclick="app.closeModal('add-modal')">Cancel</button>
-          <button type="submit" class="gos-btn gos-btn-primary">💾 Save Record</button>
-        </div>
-      </form>
+  <!-- ── Detail Panel (Right slide-out) ────────────────────── -->
+  <div class="panel-backdrop" id="panel-backdrop" onclick="app.closePanel()"></div>
+  <aside class="gos-panel" id="detail-panel">
+    <div class="panel-head">
+      <div class="panel-head-title" id="panel-title">Record Details</div>
+      <button class="panel-close-btn" onclick="app.closePanel()" aria-label="Close panel">✕</button>
     </div>
-  </div>
+    <div class="panel-body" id="panel-body"><!-- dynamic --></div>
+    <div class="panel-foot" id="panel-footer"><!-- dynamic --></div>
+  </aside>
 
-  <!-- ═══════════════════ MESSAGE GENERATOR MODAL ═══════════════════ -->
-  <div class="gos-modal-overlay" id="msg-modal-overlay">
-    <div class="gos-modal" style="max-width: 720px">
-      <div class="gos-modal-header">
-        <h2 class="gos-modal-title">✉️ Message Generator</h2>
-        <button class="gos-panel-close" id="msg-modal-close">✕</button>
+  <!-- ── Add Record Modal ───────────────────────────────────── -->
+  <div class="modal-backdrop" id="add-modal-overlay" style="display:none" onclick="if(event.target===this)app.closeModal('add-modal')">
+    <div class="gos-modal" id="add-modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h3 class="modal-title" id="add-modal-title">Add New Record</h3>
+        <button class="modal-close-btn" onclick="app.closeModal('add-modal')" aria-label="Close">✕</button>
       </div>
-      <div class="gos-modal-body" id="msg-body">
-        <!-- Templates rendered by app.js -->
+      <div class="modal-body">
+        <form id="add-form" onsubmit="event.preventDefault(); app.handleAddRecord()">
+          <div id="add-form-fields"></div>
+          <div class="modal-foot">
+            <button type="button" class="btn-secondary" onclick="app.closeModal('add-modal')">Cancel</button>
+            <button type="submit" class="btn-primary">Save Record</button>
+          </div>
+        </form>
       </div>
     </div>
   </div>
 
-  <!-- ═══════════════════ TOAST CONTAINER ═══════════════════ -->
-  <div class="gos-toast-container" id="toast-container"></div>
+  <!-- ── Message Generator Modal ───────────────────────────── -->
+  <div class="modal-backdrop" id="msg-modal-overlay" style="display:none" onclick="if(event.target===this)app.closeModal('msg-modal')">
+    <div class="gos-modal modal-lg" id="msg-modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h3 class="modal-title">Message Generator</h3>
+        <button class="modal-close-btn" onclick="app.closeModal('msg-modal')" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body" id="msg-modal-body"><!-- dynamic --></div>
+    </div>
+  </div>
 
-</div>
+  <!-- ── Confirm Modal ──────────────────────────────────────── -->
+  <div class="modal-backdrop" id="confirm-modal-overlay" style="display:none">
+    <div class="gos-modal modal-sm" id="confirm-modal" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <h3 class="modal-title" id="confirm-title">Confirm</h3>
+      </div>
+      <div class="modal-body">
+        <p id="confirm-message" style="margin:0;line-height:1.6"></p>
+      </div>
+      <div class="modal-foot">
+        <button class="btn-secondary" onclick="app.cancelConfirm()">Cancel</button>
+        <button class="btn-danger" id="confirm-action-btn" onclick="app.executeConfirm()">Confirm</button>
+      </div>
+    </div>
+  </div>
 
+  <!-- ── Toast Container ───────────────────────────────────── -->
+  <div class="toast-container" id="toast-container" aria-live="polite"></div>
 
-<!-- App Scripts -->
+</div><!-- /.gos-app -->
 
 <script src="demo-data.js"></script>
 <script src="message-templates.js"></script>
+<script src="settings-engine.js"></script>
 <script src="sheets-config.js"></script>
 <script src="app.js"></script>
-
 </body>
 </html>
