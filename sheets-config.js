@@ -377,7 +377,16 @@ class SheetsService {
     (data.organizations || []).forEach(o => { orgMap[o.organizationId] = o; });
 
     // LinkedIn Leads
-    (data.linkedinLeads || []).forEach(lead => {
+    (data.linkedinLeads || []).forEach((lead, index) => {
+      // Auto-repair missing leadId
+      if (!lead.leadId) {
+        lead.leadId = `LL-${String(index + 1).padStart(4, '0')}`;
+        if (sheetsService.isConfigured() && sheetsService.isSignedIn) {
+          sheetsService.updateRecord('linkedinLeads', index, lead).catch(err => {
+            console.error('Failed to auto-repair leadId:', lead, err);
+          });
+        }
+      }
       const contact = contactMap[lead.contactId] || (data.contacts || []).find(c => c.fullName === lead.contactName);
       lead.contactName = lead.contactName || contact?.fullName || lead.contactId || '—';
       lead.email = lead.email || contact?.email || '';
@@ -393,6 +402,9 @@ class SheetsService {
 
     // Prime Pipeline
     (data.primePipeline || []).forEach(opp => {
+      // Map and synchronize Lead ID
+      opp.leadId = opp.leadId || opp.sourceLeadId || '';
+      opp.sourceLeadId = opp.sourceLeadId || opp.leadId || '';
       const contact = contactMap[opp.contactId] || (data.contacts || []).find(c => c.fullName === opp.contactName);
       opp.contactName = opp.contactName || contact?.fullName || opp.contactId || '—';
       const org = orgMap[opp.organizationId];
@@ -400,6 +412,7 @@ class SheetsService {
       
       opp.mobile = opp.mobile || contact?.mobile || '';
       opp.email = opp.email || contact?.email || '';
+      opp.estimatedValue = parseFloat(opp.estimatedValue) || 0;
     });
 
     // Calmera Orders
