@@ -4455,6 +4455,23 @@ class GeloGrowthOS {
               this.syncError = err.message || err;
             }
           }
+        } else {
+          // If no opportunity exists, but sheets are connected, we must still update the lead record in Google Sheets!
+          if (this.sheetsConnected && lead._rowIndex !== undefined) {
+            try {
+              await sheetsService.updateRecord('linkedinLeads', lead._rowIndex, lead);
+              this.showToast('📤 Lead Saved to Google Sheets', 'success');
+              this.syncStatus = 'Synced';
+              this.syncError = null;
+              this.lastSynced = new Date().toLocaleString();
+              localStorage.setItem('gos_last_synced', this.lastSynced);
+            } catch(err) {
+              console.error('Failed to sync lead in basic stage:', err);
+              this.showToast('⚠️ Sheet sync failed. Saved locally.', 'warning');
+              this.syncStatus = 'Error';
+              this.syncError = err.message || err;
+            }
+          }
         }
       }
     } else if (sourceType === 'prime') {
@@ -4462,46 +4479,64 @@ class GeloGrowthOS {
       if (!opp) return;
       
       const leadId = opp.sourceLeadId || opp.leadId;
-      if (!leadId) return;
-      
-      const lead = this.data.linkedinLeads.find(l => l.leadId === leadId);
-      if (lead) {
-        // Sync fields from opp to lead
-        lead.contactName = opp.contactName || '';
-        lead.company = opp.orgName || '';
-        lead.mobile = opp.mobile || '';
-        lead.email = opp.email || '';
-        lead.source = opp.source || '';
-        lead.linkedinUrl = opp.profileUrl || '';
-        
-        lead.stage = opp.stage;
-        lead.projectedCloseAmount = parseFloat(opp.estimatedValue) || 0;
-        lead.paymentStatus = opp.paymentStatus || 'Unpaid';
-        
-        lead.nextAction = opp.nextAction || '';
-        lead.nextActionDate = opp.nextActionDate || '';
-        
-        lead.convertedToPipeline = 'Yes';
-        lead.pipelineOpportunityId = opp.opportunityId;
-        lead.convertedOpportunityId = opp.opportunityId;
-        lead.pipelineStage = opp.stage;
-        lead.dealStatus = opp.dealStatus;
-        
-        if (this.sheetsConnected) {
-          try {
-            await sheetsService.updateRecord('linkedinLeads', lead._rowIndex, lead);
-            await sheetsService.updateRecord('primePipeline', opp._rowIndex, opp);
-            this.showToast('📤 Lead & Pipeline Synced to Google Sheets', 'success');
-            this.syncStatus = 'Synced';
-            this.syncError = null;
-            this.lastSynced = new Date().toLocaleString();
-            localStorage.setItem('gos_last_synced', this.lastSynced);
-          } catch (err) {
-            console.error('Failed to sync lead in syncLeadAndOpportunity:', err);
-            this.showToast('⚠️ Sheet sync failed. Saved locally.', 'warning');
-            this.syncStatus = 'Error';
-            this.syncError = err.message || err;
+      if (leadId) {
+        const lead = this.data.linkedinLeads.find(l => l.leadId === leadId);
+        if (lead) {
+          // Sync fields from opp to lead
+          lead.contactName = opp.contactName || '';
+          lead.company = opp.orgName || '';
+          lead.mobile = opp.mobile || '';
+          lead.email = opp.email || '';
+          lead.source = opp.source || '';
+          lead.linkedinUrl = opp.profileUrl || '';
+          
+          lead.stage = opp.stage;
+          lead.projectedCloseAmount = parseFloat(opp.estimatedValue) || 0;
+          lead.paymentStatus = opp.paymentStatus || 'Unpaid';
+          
+          lead.nextAction = opp.nextAction || '';
+          lead.nextActionDate = opp.nextActionDate || '';
+          
+          lead.convertedToPipeline = 'Yes';
+          lead.pipelineOpportunityId = opp.opportunityId;
+          lead.convertedOpportunityId = opp.opportunityId;
+          lead.pipelineStage = opp.stage;
+          lead.dealStatus = opp.dealStatus;
+          
+          if (this.sheetsConnected) {
+            try {
+              await sheetsService.updateRecord('linkedinLeads', lead._rowIndex, lead);
+              await sheetsService.updateRecord('primePipeline', opp._rowIndex, opp);
+              this.showToast('📤 Lead & Pipeline Synced to Google Sheets', 'success');
+              this.syncStatus = 'Synced';
+              this.syncError = null;
+              this.lastSynced = new Date().toLocaleString();
+              localStorage.setItem('gos_last_synced', this.lastSynced);
+            } catch (err) {
+              console.error('Failed to sync lead in syncLeadAndOpportunity:', err);
+              this.showToast('⚠️ Sheet sync failed. Saved locally.', 'warning');
+              this.syncStatus = 'Error';
+              this.syncError = err.message || err;
+            }
           }
+          return;
+        }
+      }
+
+      // Fallback: If no connected lead (or lead not found), still save the opportunity itself to Google Sheets
+      if (this.sheetsConnected && opp._rowIndex !== undefined) {
+        try {
+          await sheetsService.updateRecord('primePipeline', opp._rowIndex, opp);
+          this.showToast('📤 Opportunity Saved to Google Sheets', 'success');
+          this.syncStatus = 'Synced';
+          this.syncError = null;
+          this.lastSynced = new Date().toLocaleString();
+          localStorage.setItem('gos_last_synced', this.lastSynced);
+        } catch (err) {
+          console.error('Failed to sync opportunity in syncLeadAndOpportunity:', err);
+          this.showToast('⚠️ Sheet sync failed. Saved locally.', 'warning');
+          this.syncStatus = 'Error';
+          this.syncError = err.message || err;
         }
       }
     }
@@ -5157,28 +5192,60 @@ class GeloGrowthOS {
     this.showToast('Profile saved!', 'success');
   }
 
-  _saveModuleSettings() {
+  async _saveModuleSettings() {
     const settings = settingsEngine.get();
     const customizableIds = ['leads', 'brandCommunity', 'productsOrders'];
-    settings.modules.forEach((mod, idx) => {
-      if (!customizableIds.includes(mod.id)) return;
+    const promises = [];
+    
+    for (let idx = 0; idx < settings.modules.length; idx++) {
+      const mod = settings.modules[idx];
+      if (!customizableIds.includes(mod.id)) continue;
+      
       const labelEl = document.getElementById(`mod-label-${idx}`);
       const tabEl   = document.getElementById(`mod-tab-${idx}`);
-      if (labelEl && labelEl.value.trim()) mod.label = labelEl.value.trim();
-      if (tabEl   && tabEl.value.trim()) {
+      
+      if (labelEl && labelEl.value.trim()) {
+        mod.label = labelEl.value.trim();
+      }
+      
+      if (tabEl && tabEl.value.trim()) {
         const newTab = tabEl.value.trim();
-        mod.sheetTab = newTab;
-        if (settings.sheets.tabMappings[mod.id] !== undefined) {
-          settings.sheets.tabMappings[mod.id] = newTab;
+        const oldTab = settings.sheets.tabMappings[mod.id] || mod.sheetTab;
+        
+        if (newTab !== oldTab) {
+          if (this.sheetsConnected && oldTab) {
+            promises.push(
+              sheetsService.renameTab(oldTab, newTab)
+                .then(() => {
+                  this.showToast(`🏷️ Renamed Google Sheets tab "${oldTab}" to "${newTab}"`, 'success');
+                })
+                .catch(err => {
+                  console.error('Failed to rename Google Sheets tab:', err);
+                  this.showToast(`⚠️ Could not rename Google Sheet tab "${oldTab}". Please rename it manually!`, 'warning');
+                })
+            );
+          }
+          mod.sheetTab = newTab;
+          if (settings.sheets.tabMappings[mod.id] !== undefined) {
+            settings.sheets.tabMappings[mod.id] = newTab;
+          }
         }
       }
-    });
+    }
+    
     settingsEngine.save(settings);
     this.buildNavigation();
     this.updateTopbar();
-    this.showToast('Module names saved!', 'success');
+    this.showToast('Module settings saved locally!', 'success');
+    
+    if (promises.length > 0) {
+      this.showToast('🔄 Renaming Google Sheet tabs in background...', 'info');
+      await Promise.all(promises);
+    }
+    
     this.renderContent();
   }
+
 
   _toggleModuleVisible(idx, visible) {
     const settings = settingsEngine.get();
@@ -5235,24 +5302,51 @@ class GeloGrowthOS {
     this.renderContent();
   }
 
-  _saveTabMappings() {
+  async _saveTabMappings() {
     const settings = settingsEngine.get();
     const customizableIds = ['leads', 'brandCommunity', 'productsOrders'];
+    const promises = [];
+    
     Object.keys(settings.sheets.tabMappings).forEach(modId => {
       if (!customizableIds.includes(modId)) return;
       const el = document.getElementById(`tab-${modId}`);
       if (el && el.value.trim()) {
         const newTab = el.value.trim();
-        settings.sheets.tabMappings[modId] = newTab;
-        const mod = settings.modules.find(m => m.id === modId);
-        if (mod) {
-          mod.sheetTab = newTab;
+        const oldTab = settings.sheets.tabMappings[modId];
+        
+        if (newTab !== oldTab) {
+          if (this.sheetsConnected && oldTab) {
+            promises.push(
+              sheetsService.renameTab(oldTab, newTab)
+                .then(() => {
+                  this.showToast(`🏷️ Renamed Google Sheets tab "${oldTab}" to "${newTab}"`, 'success');
+                })
+                .catch(err => {
+                  console.error('Failed to rename Google Sheets tab:', err);
+                  this.showToast(`⚠️ Could not rename Google Sheet tab "${oldTab}". Please rename it manually!`, 'warning');
+                })
+            );
+          }
+          settings.sheets.tabMappings[modId] = newTab;
+          const mod = settings.modules.find(m => m.id === modId);
+          if (mod) {
+            mod.sheetTab = newTab;
+          }
         }
       }
     });
+    
     settingsEngine.save(settings);
-    this.showToast('Tab mappings saved!', 'success');
+    this.showToast('Tab mappings saved locally!', 'success');
+    
+    if (promises.length > 0) {
+      this.showToast('🔄 Renaming Google Sheet tabs in background...', 'info');
+      await Promise.all(promises);
+    }
+    
+    this.renderContent();
   }
+
 
   _resetSettings() {
     this.showConfirm(
