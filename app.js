@@ -767,24 +767,29 @@ class GeloGrowthOS {
       <!-- Main Dashboard Grid -->
       <div class="gos-section-grid">
         
-        <!-- Left Panel: Priorities & Projects -->
-        <div class="gos-section-card" style="display:flex; flex-direction:column; gap:16px">
-          <div>
-            <div class="gos-section-card-header" style="padding:0 0 12px">
+        <!-- Left Column: Priorities & Projects -->
+        <div style="display:flex; flex-direction:column; gap:16px">
+          
+          <!-- Card 1: Daily Focus Priorities -->
+          <div class="gos-section-card">
+            <div class="gos-section-card-header">
               <span class="gos-section-card-title">🎯 Daily Focus Priorities</span>
             </div>
-            <div class="daily-focus-row">
-              <input class="daily-focus-input" value="${this._esc(dailyFocus[0])}" placeholder="Priority 1..." onchange="app.saveDailyFocus(0, this.value)">
-              <input class="daily-focus-input" value="${this._esc(dailyFocus[1])}" placeholder="Priority 2..." onchange="app.saveDailyFocus(1, this.value)">
-              <input class="daily-focus-input" value="${this._esc(dailyFocus[2])}" placeholder="Priority 3..." onchange="app.saveDailyFocus(2, this.value)">
+            <div class="gos-section-card-body" style="padding:16px">
+              <div class="daily-focus-row" style="margin-bottom:0">
+                <input class="daily-focus-input" value="${this._esc(dailyFocus[0])}" placeholder="Priority 1..." onchange="app.saveDailyFocus(0, this.value)">
+                <input class="daily-focus-input" value="${this._esc(dailyFocus[1])}" placeholder="Priority 2..." onchange="app.saveDailyFocus(1, this.value)">
+                <input class="daily-focus-input" value="${this._esc(dailyFocus[2])}" placeholder="Priority 3..." onchange="app.saveDailyFocus(2, this.value)">
+              </div>
             </div>
           </div>
 
-          <div>
-            <div class="gos-section-card-header" style="padding:12px 0">
+          <!-- Card 2: Active Projects -->
+          <div class="gos-section-card">
+            <div class="gos-section-card-header">
               <span class="gos-section-card-title">📁 Active Projects</span>
             </div>
-            <div class="gos-section-card-body" style="padding:0">
+            <div class="gos-section-card-body" style="padding:16px">
               ${projects.length === 0 ? `
                 <div class="gos-empty" style="padding:20px 0">
                   <span class="gos-empty-desc">No active projects.</span>
@@ -794,7 +799,7 @@ class GeloGrowthOS {
                 const completed = linkedTasks.filter(t => t.status === 'Completed').length;
                 const progress = linkedTasks.length ? Math.round((completed / linkedTasks.length) * 100) : 0;
                 return `
-                  <div style="margin-bottom:12px" onclick="app.navigateTo('projects')">
+                  <div style="margin-bottom:12px; cursor:pointer" onclick="app.navigateTo('projects')">
                     <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px">
                       <strong>${this._esc(p.projectName)}</strong>
                       <span>${progress}%</span>
@@ -807,33 +812,39 @@ class GeloGrowthOS {
               }).join('')}
             </div>
           </div>
+
         </div>
 
-        <!-- Right Panel: Quick Capture & Deadlines -->
-        <div class="gos-section-card" style="display:flex; flex-direction:column; gap:16px">
-          <div>
-            <div class="gos-section-card-header" style="padding:0 0 12px">
+        <!-- Right Column: Quick Capture & Agenda -->
+        <div style="display:flex; flex-direction:column; gap:16px">
+          
+          <!-- Card 3: Quick Capture Inbox -->
+          <div class="gos-section-card">
+            <div class="gos-section-card-header">
               <span class="gos-section-card-title">📥 Quick Capture Inbox</span>
             </div>
-            <div class="quick-capture-container">
-              <input class="quick-capture-input" id="dashboard-quick-capture" placeholder="Capture idea or task instantly..." onkeydown="if(event.key==='Enter') app.quickCaptureDashboard()">
-              <button class="quick-capture-btn" onclick="app.quickCaptureDashboard()">Capture</button>
+            <div class="gos-section-card-body" style="padding:16px">
+              <div class="quick-capture-container" style="margin-bottom:0">
+                <input class="quick-capture-input" id="dashboard-quick-capture" placeholder="Capture idea or task instantly..." onkeydown="if(event.key==='Enter') app.quickCaptureDashboard()">
+                <button class="quick-capture-btn" onclick="app.quickCaptureDashboard()">Capture</button>
+              </div>
             </div>
           </div>
 
-          <div>
-            <div class="gos-section-card-header" style="padding:12px 0">
+          <!-- Card 4: Upcoming Agenda -->
+          <div class="gos-section-card">
+            <div class="gos-section-card-header">
               <span class="gos-section-card-title">⏳ Upcoming Agenda</span>
             </div>
-            <div class="gos-section-card-body" style="padding:0">
+            <div class="gos-section-card-body" style="padding:16px">
               ${upcomingTasks.length === 0 ? `
                 <div class="gos-empty" style="padding:20px 0">
                   <span class="gos-empty-desc">All caught up!</span>
                 </div>
               ` : `
-                <ul class="gos-task-list">
+                <ul class="gos-task-list" style="margin:0; padding:0; list-style:none">
                   ${upcomingTasks.map(t => `
-                    <li class="gos-task-item" onclick="app.openTaskPanel('${t.taskId}')">
+                    <li class="gos-task-item" onclick="app.openTaskPanel('${t.taskId}')" style="cursor:pointer">
                       <div class="gos-task-info">
                         <span class="gos-task-title">${this._esc(t.title)}</span>
                         <div class="gos-task-meta">Due ${t.dueAt} · ${this.renderBadge(t.priority)}</div>
@@ -844,10 +855,17 @@ class GeloGrowthOS {
               `}
             </div>
           </div>
+
         </div>
 
-          </div>
-          <div class="gos-section-card-body" style="padding:0">
+      </div> <!-- End of gos-section-grid -->
+
+      <!-- Card 5: Outreach / Follow-ups Today -->
+      <div class="gos-section-card" style="margin-top:20px">
+        <div class="gos-section-card-header">
+          <span class="gos-section-card-title">🤝 Outreach / Follow-ups Today</span>
+        </div>
+        <div class="gos-section-card-body" style="padding:0">
             ${todayActionsList.length === 0 ? `
               <div class="gos-empty" style="padding:50px 20px">
                 <span class="gos-empty-icon">🎉</span>
